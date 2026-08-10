@@ -41,6 +41,7 @@ batch axes.
 ```
 """
 
+import math
 from typing import ClassVar, Self
 
 import equinox as eqx
@@ -323,9 +324,7 @@ class _TensorBernstein(eqx.Module):
         scale = jnp.ones(grid_shape, dtype=c1.dtype)
         flat_indices = jnp.zeros(grid_shape, dtype=jnp.int32)
         output_shape = tuple(n + m - 1 for n, m in zip(n_shape, m_shape))
-        strides = tuple(
-            int(jnp.prod(jnp.asarray(output_shape[axis + 1 :]))) for axis in range(d)
-        )
+        strides = tuple(math.prod(output_shape[axis + 1 :]) for axis in range(d))
 
         for axis, (n_size, m_size, stride) in enumerate(zip(n_shape, m_shape, strides)):
             i = jnp.arange(n_size).reshape(
