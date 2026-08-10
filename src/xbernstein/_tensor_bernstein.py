@@ -6,6 +6,8 @@ import jax.numpy as jnp
 import jax.scipy.special as jss
 from jaxtyping import Float
 
+from .bpoly import Bernstein
+
 
 class _TensorBernstein(eqx.Module):
     """Shared implementation for tensor-product Bernstein polynomials."""
@@ -199,3 +201,70 @@ class _TensorBernstein(eqx.Module):
             jnp.stack(right[::-1], axis=-1), -1, axis_index
         )
         return type(self)(left_coefficients), type(self)(right_coefficients)
+
+    def segment(
+        self, start: Float[jax.Array, "..."], end: Float[jax.Array, "..."]
+    ) -> Bernstein:
+        """Return the polynomial restricted to the segment from ``start`` to ``end``."""
+        start = jnp.asarray(start, dtype=self.c.dtype)
+        end = jnp.asarray(end, dtype=self.c.dtype)
+        dimensions = self.parameter_dimensions
+        if (
+            start.ndim == 0
+            or end.ndim == 0
+            or start.shape[-1] != dimensions
+            or end.shape[-1] != dimensions
+        ):
+            raise ValueError(
+                "start and end must have a final dimension of "
+                f"{dimensions}, got {start.shape} and {end.shape}"
+            )
+
+        batch_shape = jnp.broadcast_shapes(self.shape, start.shape[:-1], end.shape[:-1])
+        degrees = self.c.shape[-dimensions:]
+        coefficients = self._broadcast_coefficients(self.c, batch_shape, degrees)
+        starts = jnp.broadcast_to(start, batch_shape + (dimensions,))
+        ends = jnp.broadcast_to(end, batch_shape + (dimensions,))
+
+        # Reparameterize each Bernstein basis along the segment with its blossom.
+        # The k-th control point uses `start` n-k times and `end` k times.
+        for axis, axis_size in enumerate(degrees):
+            axis_degree = axis_size - 1
+            basis = jnp.broadcast_to(
+                jnp.eye(axis_size, dtype=self.c.dtype),
+                batch_shape + (axis_size, axis_size),
+            )
+            reparameterized = []
+            for end_count in range(axis_size):
+                w = basis
+                for parameter in [starts[..., axis]] * (axis_degree - end_count) + [
+                    ends[..., axis]
+                ] * end_count:
+                    weight = parameter.reshape(batch_shape + (1, 1))
+                    w = (1.0 - weight) * w[..., :-1, :] + weight * w[..., 1:, :]
+                reparameterized.append(w[..., 0, :])
+            transform = jnp.stack(reparameterized, axis=-2)
+
+            axis_index = len(batch_shape) + axis
+            coefficients = jnp.moveaxis(coefficients, axis_index, -1)
+            other_dimensions = coefficients.ndim - len(batch_shape) - 1
+            transform = transform.reshape(
+                batch_shape + (1,) * other_dimensions + transform.shape[-2:]
+            )
+            coefficients = jnp.sum(coefficients[..., None, :] * transform, axis=-1)
+            coefficients = jnp.moveaxis(coefficients, -1, axis_index)
+
+        degree = sum(axis_size - 1 for axis_size in degrees)
+        multi_indices = jnp.indices(degrees)
+        total_indices = jnp.sum(multi_indices, axis=0)
+        scale = jnp.ones(degrees, dtype=self.c.dtype)
+        for axis, axis_size in enumerate(degrees):
+            scale = scale * jss.comb(axis_size - 1, multi_indices[axis])
+        scale = scale / jss.comb(degree, total_indices)
+
+        control_points = (
+            jnp.zeros(batch_shape + (degree + 1,), dtype=self.c.dtype)
+            .at[..., total_indices]
+            .add(coefficients * scale)
+        )
+        return Bernstein(control_points)
