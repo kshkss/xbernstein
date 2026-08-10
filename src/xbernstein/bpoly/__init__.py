@@ -1,3 +1,23 @@
+r"""One-dimensional Bernstein polynomials on the unit interval.
+
+For degree $n$, the Bernstein basis is
+
+$$
+B_i^n(t) = \binom{n}{i} t^i (1-t)^{n-i},
+\qquad 0 \leq i \leq n,\quad t \in [0, 1].
+$$
+
+Throughout this module, $\mathbf{c} = (c_0, \ldots, c_n)$ denotes a
+coefficient vector and
+
+$$
+p(t) = \sum_{i=0}^{n} c_i B_i^n(t)
+$$
+
+denotes its polynomial. The final array axis stores $i$; all leading axes are
+independent batch or value axes.
+"""
+
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
@@ -8,9 +28,21 @@ from typing import Self, NamedTuple
 
 
 def _elevate(c: jax.Array, target_n: int) -> jax.Array:
-    """
-    次数昇格（内部用）
-    最後の次元を Bernstein 係数次元として、target_n 次まで昇格する。
+    r"""Represent $p$ in the Bernstein basis of degree $N=$ ``target_n``.
+
+    If $p$ initially has degree $n$, degree elevation preserves the function
+    while replacing its coefficient vector. One step from degree $r$ to
+    $r+1$ uses
+
+    $$
+    \tilde{c}_0 = c_0,\qquad
+    \tilde{c}_i = \frac{i}{r+1}c_{i-1}
+        + \left(1-\frac{i}{r+1}\right)c_i,\qquad
+    \tilde{c}_{r+1} = c_r.
+    $$
+
+    The recurrence is applied until degree $N$ is reached. The final axis is
+    the Bernstein index $i$; leading axes are preserved unchanged.
     """
     w = c
     n = w.shape[-1] - 1
@@ -25,20 +57,35 @@ def _elevate(c: jax.Array, target_n: int) -> jax.Array:
 
 
 class Bernstein(eqx.Module):
-    """Bernstein多項式のクラス"""
+    r"""Represent $p(t)=\sum_{i=0}^n c_i B_i^n(t)$ on $[0,1]$.
+
+    The coefficient array ``c`` has shape ``(*batch, n + 1)``. Its final axis
+    stores the Bernstein index $i$, while every leading axis represents an
+    independent polynomial or a vector-valued coefficient component. All
+    operations act on the polynomial parameter $t$ and broadcast only those
+    leading axes.
+    """
 
     c: Float[jax.Array, "*batch order"]  # 制御点
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """Return the coefficient shape excluding the Bernstein-index axis $i$."""
         return self.c.shape[:-1]
 
     @property
     def dtype(self) -> str:
+        """Return the scalar field used for the coefficients $c_i$."""
         return str(self.c.dtype)
 
     def __add__(self, other: Self) -> Self:
-        """和"""
+        r"""Return the polynomial sum $p+q$.
+
+        If $p$ and $q$ have different degrees, both coefficient vectors are
+        elevated to degree $\max(n,m)$ before their corresponding coefficients
+        are added. Thus the returned Bernstein representation has the same
+        parameter domain and function value as $p(t)+q(t)$.
+        """
         c1 = self.c
         c2 = other.c
         target_n = max(c1.shape[-1], c2.shape[-1]) - 1
@@ -46,7 +93,12 @@ class Bernstein(eqx.Module):
         return type(self)(_elevate(c1, target_n) + _elevate(c2, target_n))
 
     def __sub__(self, other: Self) -> Self:
-        """差"""
+        r"""Return the polynomial difference $p-q$.
+
+        If $p$ and $q$ have different degrees, both coefficient vectors are
+        elevated to degree $\max(n,m)$ before their corresponding coefficients
+        are subtracted.
+        """
         c1 = self.c
         c2 = other.c
         target_n = max(c1.shape[-1], c2.shape[-1]) - 1
@@ -54,7 +106,21 @@ class Bernstein(eqx.Module):
         return type(self)(_elevate(c1, target_n) - _elevate(c2, target_n))
 
     def __mul__(self, other: Self) -> Self:
-        """積"""
+        r"""Return the pointwise product $r(t)=p(t)q(t)$.
+
+        For degree-$n$ coefficients $c_i$ and degree-$m$ coefficients $d_j$,
+        the product is represented at degree $n+m$:
+
+        $$
+        r_k =
+        \sum_{\substack{0\leq i\leq n\\0\leq j\leq m\\i+j=k}}
+        c_i d_j
+        \frac{\binom{n}{i}\binom{m}{j}}{\binom{n+m}{k}}.
+        $$
+
+        This follows from the product identity for two Bernstein basis
+        functions and is applied independently to every broadcast batch item.
+        """
         c1 = self.c
         c2 = other.c
         n = c1.shape[-1] - 1
@@ -74,7 +140,19 @@ class Bernstein(eqx.Module):
         return type(self)(results)
 
     def deriv(self, m=1) -> Self:
-        """微分 (m階)"""
+        r"""Return $\frac{d^m p}{dt^m}$ in the Bernstein basis.
+
+        A single derivative maps a degree-$n$ coefficient vector to the
+        degree-$n-1$ vector
+
+        $$
+        d_i = n(c_{i+1}-c_i),\qquad 0\leq i<n.
+        $$
+
+        The method repeats this finite-difference transformation $m$ times.
+        When $m>n$, the derivative is the identically zero degree-$0$
+        polynomial.
+        """
         c = self.c
         n = c.shape[-1] - 1
 
@@ -86,7 +164,18 @@ class Bernstein(eqx.Module):
         return type(self)(c)
 
     def int(self, k=0.0) -> Self:
-        """積分 (kは積分定数)"""
+        r"""Return an antiderivative $P$ such that $P'(t)=p(t)$ and $P(0)=k$.
+
+        If $p$ has degree $n$, $P$ has degree $n+1$ with coefficients
+
+        $$
+        C_0=k,\qquad
+        C_{i+1}=k+\frac{1}{n+1}\sum_{j=0}^{i}c_j,
+        \qquad 0\leq i\leq n.
+        $$
+
+        The constant $k$ may broadcast over the leading coefficient axes.
+        """
         c = self.c
         n = c.shape[-1] - 1
         c_new = jnp.concatenate(
@@ -99,7 +188,19 @@ class Bernstein(eqx.Module):
         return type(self)(c_new)
 
     def __call__(self, t: Float[jax.Array, " k"]) -> Float[jax.Array, "*batch k"]:
-        """ド・カステリョのアルゴリズムによる代入・評価"""
+        r"""Evaluate $p(t)$ with the De Casteljau recurrence.
+
+        Starting from $c_i^{(0)}=c_i$, each reduction level is
+
+        $$
+        c_i^{(r+1)}(t)
+        =(1-t)c_i^{(r)}(t)+t c_{i+1}^{(r)}(t).
+        $$
+
+        After $n$ levels, $c_0^{(n)}(t)=p(t)$. A scalar $t$ is shared across
+        leading axes; an array of parameters creates corresponding evaluation
+        axes in the result.
+        """
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
 
@@ -120,7 +221,18 @@ class Bernstein(eqx.Module):
         return w[..., 0]
 
     def split(self, t: Float[jax.Array, ""] = jnp.array(0.5)) -> tuple[Self, Self]:
-        """tでの曲線の分割（De Casteljauのアルゴリズム）"""
+        r"""Split $p$ at $t$ into two polynomials reparameterized to $[0,1]$.
+
+        Let $c_i^{(r)}(t)$ be the De Casteljau table described by
+        :meth:`__call__`. The left control polygon is
+
+        $$
+        (c_0^{(0)},c_0^{(1)}(t),\ldots,c_0^{(n)}(t)),
+        $$
+
+        representing $p(ts)$, and the right polygon is the reverse sequence
+        of last table entries, representing $p(t+(1-t)s)$ for $s\in[0,1]$.
+        """
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
         t = jnp.broadcast_to(t, c.shape[:-1])
@@ -142,15 +254,24 @@ class Bernstein(eqx.Module):
 
 
 class OptimizeResult(NamedTuple):
+    r"""Store an approximation to $\min_{t\in[0,1]}p(t)$ and an associated $t$.
+
+    ``f`` is the current upper-bound value and ``x`` is the parameter at which
+    that value is attained. Both arrays have the same leading batch/value
+    shape as the input polynomial.
+    """
+
     f: Float[jax.Array, "*batch"]  # 最小値
     x: Float[jax.Array, "*batch"]  # 最小値を与えるx
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """Return the leading shape shared by the minimum value $f$ and point $x$."""
         return self.f.shape
 
     @property
     def dtype(self) -> str:
+        """Return the scalar field used for $f$ and $x$."""
         return str(self.f.dtype)
 
 
@@ -159,6 +280,21 @@ class OptimizeResult(NamedTuple):
 def _minimize(
     coeffs: Float[jax.Array, " n"], max_steps: int = 200, eps: float = 1e-6
 ) -> tuple[Float[jax.Array, ""], Float[jax.Array, ""]]:
+    r"""Approximate $\min_{t\in[0,1]}p(t)$ by Bernstein branch and bound.
+
+    For every active interval $I=[u,v]$, its De Casteljau control polygon
+    represents the restricted polynomial. The convex-hull property gives the
+    certified lower bound
+
+    $$
+    L_I=\min_i c_i^I\leq \min_{t\in I}p(t).
+    $$
+
+    Endpoint and midpoint evaluations provide an incumbent upper bound $U$.
+    The interval with the smallest $L_I$ is bisected at its midpoint. The
+    process stops after ``max_steps`` bisections or when
+    $\;U-\min_I L_I\leq\text{``eps``}$.
+    """
     a = 0.0
     b = 1.0
     b_init = coeffs
@@ -179,11 +315,13 @@ def _minimize(
 
     # 停止条件 (指定ステップ数到達、または許容誤差達成)
     def cond_fn(state):
+        r"""Continue while $U-\min_I L_I$ exceeds the requested tolerance."""
         _, _, _, lb_buf, ub, _, step = state
         return (step < max_steps) & ((ub - jnp.min(lb_buf)) > eps)
 
     # 反復ステップ
     def body_fn(state):
+        r"""Bisect the interval attaining $\min_I L_I$ and update the incumbent."""
         u_buf, v_buf, b_buf, lb_buf, ub, best_x, step = state
 
         min_idx = jnp.argmin(lb_buf)
@@ -228,7 +366,24 @@ def _minimize_jvp(
     tuple[Float[jax.Array, ""], Float[jax.Array, ""]],
     tuple[Float[jax.Array, ""], Float[jax.Array, ""]],
 ]:
-    """JVP (Jacobian-vector product) for the _minimize function."""
+    r"""Differentiate the approximate minimum using envelope and implicit rules.
+
+    For coefficient perturbation $\dot p$, the envelope rule treats the
+    primal minimizer $x^\ast$ as fixed when differentiating the value:
+
+    $$
+    \dot f=\dot p(x^\ast).
+    $$
+
+    At an interior stationary minimizer, differentiating
+    $p'(x^\ast)=0$ gives
+
+    $$
+    \dot x=-\frac{\dot p'(x^\ast)}{p''(x^\ast)}.
+    $$
+
+    A boundary minimizer is treated as locally fixed, so its tangent is zero.
+    """
     coeffs, max_steps, eps = primals
     coeffs = Bernstein(coeffs)
     t_coeffs, _, _ = tangents
@@ -263,7 +418,19 @@ def _minimize_jvp(
 def minimize(
     bpoly: Float[Bernstein, "*batch"], max_steps: int = 200, eps: float = 1e-6
 ) -> Float[OptimizeResult, "*batch"]:
-    """Bernstein多項式の最小値を求める（JVP対応）"""
+    r"""Apply branch-and-bound to each leading-axis polynomial on $[0,1]$.
+
+    The method computes an approximate pair
+
+    $$
+    (f,x)\approx\left(\min_{t\in[0,1]}p(t),
+    \mathop{\mathrm{argmin}}_{t\in[0,1]}p(t)\right)
+    $$
+
+    for every independently batched coefficient vector. It flattens leading
+    axes only to vectorize the scalar solver, then restores their original
+    arrangement in :class:`OptimizeResult`.
+    """
     shape = bpoly.shape[:-1]
     n = bpoly.shape[-1]
     coeffs = Bernstein(bpoly.c.reshape([-1, n]))
