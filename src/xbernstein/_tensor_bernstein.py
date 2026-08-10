@@ -22,7 +22,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from .bpoly import Bernstein
 
@@ -44,6 +44,24 @@ class _TensorBernstein(eqx.Module):
     def shape(self) -> tuple[int, ...]:
         """Return the coefficient-array axes preceding the multi-index $\mathbf{i}$."""
         return self.c.shape[: -self.parameter_dimensions]
+
+    @property
+    def order(self) -> Int[jax.Array, " dim"]:
+        r"""Return the parameter-wise degree vector $\mathbf{n}$.
+
+        If $d=$ ``parameter_dimensions``, the final coefficient axes store
+        the multi-index components $i_0,\ldots,i_{d-1}$. Their lengths obey
+
+        $$
+        \bigl(\text{``c.shape[-d]``},\ldots,\text{``c.shape[-1]``}\bigr)
+        = \mathbf{n} + \mathbf{1}
+        = \text{``order``} + \mathbf{1}.
+        $$
+
+        The returned JAX integer array has shape ``(d,)`` in the same axis
+        order as the polynomial parameters.
+        """
+        return jnp.asarray(self.c.shape[-self.parameter_dimensions :]) - 1
 
     @property
     def dtype(self) -> str:
