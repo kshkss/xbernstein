@@ -371,7 +371,6 @@ def _minimize(
 
 
 @_minimize.defjvp
-@jaxtyped(typechecker=beartype)
 def _minimize_jvp(
     primals: tuple[Float[jax.Array, " n"], int, float],
     tangents: tuple[Float[jax.Array, " n"], int, float],
