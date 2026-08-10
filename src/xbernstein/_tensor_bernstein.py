@@ -30,6 +30,19 @@ class _TensorBernstein(eqx.Module):
             )
         return self.c.ndim - self.parameter_dimensions + axis
 
+    def _lower_dimension(self, coefficients: jax.Array):
+        if self.parameter_dimensions == 2:
+            return Bernstein(coefficients)
+        if self.parameter_dimensions == 3:
+            from .bernstein_2d import Bernstein2D
+
+            return Bernstein2D(coefficients)
+        if self.parameter_dimensions == 4:
+            from .bernstein_3d import Bernstein3D
+
+            return Bernstein3D(coefficients)
+        raise RuntimeError("tensor Bernstein polynomials require at least 2 dimensions")
+
     def _elevate_axis(self, c: jax.Array, axis: int, target_degree: int) -> jax.Array:
         axis_index = c.ndim - self.parameter_dimensions + axis
         w = jnp.moveaxis(c, axis_index, -1)
@@ -201,6 +214,32 @@ class _TensorBernstein(eqx.Module):
             jnp.stack(right[::-1], axis=-1), -1, axis_index
         )
         return type(self)(left_coefficients), type(self)(right_coefficients)
+
+    def slice(self, value: Float[jax.Array, "..."], axis: int = 0):
+        """Fix one parameter axis and return the lower-dimensional polynomial."""
+        self._axis_index(axis)
+        value = jnp.asarray(value, dtype=self.c.dtype)
+        dimensions = self.parameter_dimensions
+        degrees = self.c.shape[-dimensions:]
+        batch_shape = jnp.broadcast_shapes(self.shape, value.shape)
+        coefficients = self._broadcast_coefficients(self.c, batch_shape, degrees)
+        axis_index = len(batch_shape) + axis
+        w = jnp.moveaxis(coefficients, axis_index, -1)
+        weight = jnp.broadcast_to(value, batch_shape).reshape(
+            batch_shape + (1,) * dimensions
+        )
+
+        for _ in range(w.shape[-1] - 1):
+            w = (1.0 - weight) * w[..., :-1] + weight * w[..., 1:]
+
+        return self._lower_dimension(w[..., 0])
+
+    def integrate_out(self, axis: int = 0):
+        """Integrate one parameter axis over [0, 1] and remove it."""
+        axis_index = self._axis_index(axis)
+        order = self.c.shape[axis_index]
+        coefficients = jnp.sum(self.c, axis=axis_index) / order
+        return self._lower_dimension(coefficients)
 
     def segment(
         self, start: Float[jax.Array, "..."], end: Float[jax.Array, "..."]
