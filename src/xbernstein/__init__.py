@@ -1,7 +1,7 @@
 from .bernstein import Bernstein, _minimize
-from .bernstein_2d import Bernstein2D
-from .bernstein_3d import Bernstein3D
-from .bernstein_4d import Bernstein4D
+from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
+from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
+from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 
 __all__ = ["Bernstein", "Bernstein2D", "Bernstein3D", "Bernstein4D", "minimize"]
 
@@ -48,8 +48,10 @@ class OptimizeResult(NamedTuple):
 
 
 def minimize(
-    bpoly: Float[Bernstein, "*batch"], max_steps: int = 200, eps: float = 1e-6
-) -> Float[OptimizeResult, "*batch"]:
+    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D,
+    max_steps: int = 200,
+    eps: float = 1e-6,
+) -> OptimizeResult:
     r"""Apply branch-and-bound to each leading-axis polynomial on $[0,1]$.
 
     The method computes an approximate pair
@@ -90,10 +92,22 @@ def minimize(
     separate polynomial inputs. The leading shape is taken entirely from that
     object's coefficient array.
     """
-    shape = bpoly.shape
-    n = bpoly.order + 1
-    coefficients = bpoly.c.reshape([-1, n])
-
-    fs, xs = jax.vmap(_minimize, in_axes=(0, None, None))(coefficients, max_steps, eps)
-    results = OptimizeResult(f=fs.reshape(shape), x=xs.reshape(shape))
-    return results
+    solvers = (
+        (Bernstein, _minimize, 1),
+        (Bernstein2D, _minimize_2d, 2),
+        (Bernstein3D, _minimize_3d, 3),
+        (Bernstein4D, _minimize_4d, 4),
+    )
+    for polynomial_type, solver, dimensions in solvers:
+        if isinstance(bpoly, polynomial_type):
+            shape = bpoly.shape
+            coefficient_shape = bpoly.c.shape[-dimensions:]
+            coefficients = bpoly.c.reshape((-1,) + coefficient_shape)
+            fs, xs = jax.vmap(solver, in_axes=(0, None, None))(
+                coefficients, max_steps, eps
+            )
+            x_shape = shape if dimensions == 1 else shape + (dimensions,)
+            return OptimizeResult(f=fs.reshape(shape), x=xs.reshape(x_shape))
+    raise TypeError(
+        f"minimize requires a Bernstein polynomial, got {type(bpoly).__name__}"
+    )
