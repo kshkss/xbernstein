@@ -319,10 +319,11 @@ class Bernstein(eqx.Module):
         """
         c = self.c
         n = c.shape[-1] - 1
+        k = jnp.broadcast_to(jnp.asarray(k, dtype=c.dtype), c.shape[:-1])
         c_new = jnp.concatenate(
             [
-                jnp.full(c.shape[:-1], k, dtype=c.dtype)[..., None],
-                k + jnp.cumsum(c, axis=-1) / (n + 1),
+                k[..., None],
+                k[..., None] + jnp.cumsum(c, axis=-1) / (n + 1),
             ],
             axis=-1,
         )
