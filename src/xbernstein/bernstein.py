@@ -16,6 +16,30 @@ $$
 
 denotes its polynomial. The final array axis stores $i$; all leading axes are
 independent batch or value axes.
+
+Batch dimensions
+----------------
+
+An array of coefficients with shape ``(*batch, n + 1)`` represents one
+degree-$n$ polynomial for every leading index. Evaluating at a scalar preserves
+``*batch``; evaluating at parameters with shape ``*points`` returns
+``(*batch, *points)``.
+
+```python
+>>> import jax.numpy as jnp
+>>> from xbernstein import Bernstein
+>>> coefficients = jnp.array([[0.0, 1.0], [2.0, 4.0]])
+>>> curves = Bernstein(coefficients)  # Two degree-1 polynomials.
+>>> curves.shape
+(2,)
+>>> curves(0.25).shape  # One shared parameter for both curves.
+(2,)
+>>> curves(jnp.array([0.0, 0.5, 1.0])).shape
+(2, 3)
+>>> grid = Bernstein(jnp.zeros((2, 3, 2)))
+>>> grid(jnp.zeros((4, 1))).shape
+(2, 3, 4, 1)
+```
 """
 
 import jax
@@ -64,6 +88,74 @@ class Bernstein(eqx.Module):
     independent polynomial or a vector-valued coefficient component. All
     operations act on the polynomial parameter $t$ and broadcast only those
     leading axes.
+
+    Batch dimensions
+    ----------------
+
+    Leading axes are never Bernstein axes: each leading index selects an
+    independent polynomial with the same degree. The final axis is always the
+    Bernstein coefficient axis, so arithmetic broadcasts only ``*batch`` and
+    aligns degrees separately.
+
+    The following raw arrays cannot be added by JAX because their final axes
+    are treated as ordinary array axes:
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> try:
+    ...     jnp.zeros((2, 3)) + jnp.zeros((2,))
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+    ```
+
+    As Bernstein coefficients, ``(2, 3)`` means batch shape ``(2,)`` and
+    degree $2$, whereas ``(2,)`` means no batch axes and degree $1$.
+    Therefore the second polynomial broadcasts to both batch entries and is
+    degree-elevated before arithmetic:
+
+    ```python
+    >>> curves = Bernstein(jnp.array([[0.0, 1.0], [2.0, 4.0]]))
+    >>> line = Bernstein(jnp.array([0.0, 1.0]))
+    >>> (curves + line).c.shape
+    (2, 2)
+    ```
+
+    Right-aligned broadcasting applies to every leading batch axis. The raw
+    coefficient arrays below have incompatible final axes, but the Bernstein
+    objects interpret those axes as degree $2$ and degree $1$:
+
+    ```python
+    >>> left = Bernstein(jnp.zeros((2, 1, 3)))   # Batch shape (2, 1).
+    >>> right = Bernstein(jnp.zeros((1, 3, 2)))  # Batch shape (1, 3).
+    >>> (left + right).c.shape
+    (2, 3, 3)
+    ```
+
+    This applies equally to ``+``, ``-``, and ``*``. A product increases the
+    degree after leading-axis broadcasting.
+
+    Parameter arrays are not paired with batch axes. They append evaluation
+    axes after ``*batch``:
+
+    ```python
+    >>> quadratic = Bernstein(jnp.zeros((2, 3)))
+    >>> quadratic(jnp.array([0.0, 0.5])).shape
+    (2, 2)
+    >>> Bernstein(jnp.zeros((2, 3, 2)))(jnp.zeros((4, 1))).shape
+    (2, 3, 4, 1)
+    ```
+
+    In contrast, two non-singleton leading batch shapes must themselves be
+    broadcast-compatible:
+
+    ```python
+    >>> try:
+    ...     Bernstein(jnp.zeros((2, 3))) + Bernstein(jnp.zeros((3, 2)))
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+    ```
     """
 
     c: Float[jax.Array, "*batch order"]  # 制御点
@@ -98,6 +190,9 @@ class Bernstein(eqx.Module):
         elevated to degree $\max(n,m)$ before their corresponding coefficients
         are added. Thus the returned Bernstein representation has the same
         parameter domain and function value as $p(t)+q(t)$.
+
+        See :class:`Bernstein` for the common arithmetic batch-broadcast
+        convention and executable examples.
         """
         c1 = self.c
         c2 = other.c
@@ -111,6 +206,9 @@ class Bernstein(eqx.Module):
         If $p$ and $q$ have different degrees, both coefficient vectors are
         elevated to degree $\max(n,m)$ before their corresponding coefficients
         are subtracted.
+
+        See :class:`Bernstein` for the common arithmetic batch-broadcast
+        convention and executable examples.
         """
         c1 = self.c
         c2 = other.c
@@ -133,6 +231,9 @@ class Bernstein(eqx.Module):
 
         This follows from the product identity for two Bernstein basis
         functions and is applied independently to every broadcast batch item.
+
+        See :class:`Bernstein` for the common arithmetic batch-broadcast
+        convention and executable examples.
         """
         c1 = self.c
         c2 = other.c
@@ -165,6 +266,19 @@ class Bernstein(eqx.Module):
         The method repeats this finite-difference transformation $m$ times.
         When $m>n$, the derivative is the identically zero degree-$0$
         polynomial.
+
+        Batch dimensions
+        ----------------
+
+        Differentiation leaves leading axes unchanged and shortens only the
+        final coefficient axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein
+        >>> Bernstein(jnp.zeros((2, 4))).deriv(m=2).c.shape
+        (2, 2)
+        ```
         """
         c = self.c
         n = c.shape[-1] - 1
@@ -188,6 +302,20 @@ class Bernstein(eqx.Module):
         $$
 
         The constant $k$ may broadcast over the leading coefficient axes.
+
+        Batch dimensions
+        ----------------
+
+        Integration preserves leading axes and adds one control point on the
+        final axis. A batched integration constant supplies one value per
+        polynomial:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein
+        >>> Bernstein(jnp.zeros((2, 3))).int(k=jnp.array([1.0, 2.0])).c.shape
+        (2, 4)
+        ```
         """
         c = self.c
         n = c.shape[-1] - 1
@@ -213,6 +341,21 @@ class Bernstein(eqx.Module):
         After $n$ levels, $c_0^{(n)}(t)=p(t)$. A scalar $t$ is shared across
         leading axes; an array of parameters creates corresponding evaluation
         axes in the result.
+
+        Batch dimensions
+        ----------------
+
+        A parameter array does not consume a leading coefficient axis. Its
+        shape is appended after all leading axes:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein
+        >>> Bernstein(jnp.zeros((2, 3)))(jnp.linspace(0.0, 1.0, 4)).shape
+        (2, 4)
+        >>> Bernstein(jnp.zeros((2, 3, 2)))(jnp.zeros((4, 1))).shape
+        (2, 3, 4, 1)
+        ```
         """
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
@@ -245,6 +388,20 @@ class Bernstein(eqx.Module):
 
         representing $p(ts)$, and the right polygon is the reverse sequence
         of last table entries, representing $p(t+(1-t)s)$ for $s\in[0,1]$.
+
+        Batch dimensions
+        ----------------
+
+        The split parameter may provide one value per leading batch item. Both
+        returned polynomials retain the original coefficient shape:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein
+        >>> left, right = Bernstein(jnp.zeros((2, 3))).split(jnp.array([0.25, 0.75]))
+        >>> left.c.shape, right.c.shape
+        ((2, 3), (2, 3))
+        ```
         """
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
@@ -272,6 +429,20 @@ class OptimizeResult(NamedTuple):
     ``f`` is the current upper-bound value and ``x`` is the parameter at which
     that value is attained. Both arrays have the same leading batch/value
     shape as the input polynomial.
+
+    Batch dimensions
+    ----------------
+
+    If the input coefficient array has shape ``(*batch, n + 1)``, both ``f``
+    and ``x`` have shape ``(*batch,)``. Each leading index is minimized
+    independently.
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> result = OptimizeResult(f=jnp.zeros((2, 3)), x=jnp.ones((2, 3)))
+    >>> result.f.shape, result.x.shape
+    ((2, 3), (2, 3))
+    ```
     """
 
     f: Float[jax.Array, "*batch"]  # 最小値
@@ -442,6 +613,33 @@ def minimize(
     for every independently batched coefficient vector. It flattens leading
     axes only to vectorize the scalar solver, then restores their original
     arrangement in :class:`OptimizeResult`.
+
+    Batch dimensions
+    ----------------
+
+    The final coefficient axis is excluded from the batch shape. The following
+    call minimizes two degree-1 polynomials independently:
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> from xbernstein import Bernstein
+    >>> from xbernstein.bernstein import minimize
+    >>> result = minimize(Bernstein(jnp.array([[0.0, 1.0], [1.0, 0.0]])))
+    >>> result.f.shape, result.x.shape
+    ((2,), (2,))
+    ```
+
+    A higher-rank leading shape is likewise preserved:
+
+    ```python
+    >>> result = minimize(Bernstein(jnp.zeros((2, 3, 2))))
+    >>> result.f.shape
+    (2, 3)
+    ```
+
+    ``minimize`` accepts one Bernstein object, so it does not broadcast
+    separate polynomial inputs. The leading shape is taken entirely from that
+    object's coefficient array.
     """
     shape = bpoly.shape
     n = bpoly.order + 1

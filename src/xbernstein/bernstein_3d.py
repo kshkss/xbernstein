@@ -15,6 +15,31 @@ class Bernstein3D(_TensorBernstein):
     c_{i_0,i_1,i_2}
     \prod_{a=0}^{2}B_{i_a}^{n_a}(u_a).
     $$
+
+    Batch dimensions
+    ----------------
+
+    For coefficients of shape ``(2, 2, 3, 2)``, the leading axis batches two
+    polynomials and the trailing axes have degree vector $(1,2,1)$:
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> from xbernstein import Bernstein3D
+    >>> volumes = Bernstein3D(jnp.zeros((2, 2, 3, 2)))
+    >>> volumes(jnp.linspace(0.0, 1.0, 4), 0.5, 0.25).shape
+    (2, 4)
+    >>> volumes(jnp.zeros((3, 1)), jnp.zeros((1, 4)), 0.25).shape
+    (2, 3, 4)
+    >>> left = Bernstein3D(jnp.zeros((2, 1, 2, 3, 2)))
+    >>> right = Bernstein3D(jnp.zeros((1, 3, 3, 2, 2)))
+    >>> (left + right).c.shape
+    (2, 3, 3, 3, 2)
+    >>> try:
+    ...     volumes + Bernstein3D(jnp.zeros((3, 2, 3, 2)))
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+    ```
     """
 
     parameter_dimensions: ClassVar[int] = 3

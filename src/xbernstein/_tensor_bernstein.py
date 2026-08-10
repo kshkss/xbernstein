@@ -14,6 +14,31 @@ where $B_i^n$ is the one-dimensional Bernstein basis defined in
 ``xbernstein.bpoly``. The final $d$ coefficient-array axes correspond, in
 order, to the components of $\mathbf{i}$; all earlier axes are batch or value
 axes.
+
+Batch dimensions
+----------------
+
+For coefficient shape ``(*batch, n_0 + 1, ..., n_{d-1} + 1)``, every leading
+index identifies an independent tensor-product polynomial. Coordinate arrays
+``u_0, ..., u_{d-1}`` broadcast to a shared shape ``*points``; evaluation then
+returns shape ``(*batch, *points)``. The final $d$ coefficient axes are never
+batch axes.
+
+```python
+>>> import jax.numpy as jnp
+>>> from xbernstein import Bernstein2D
+>>> patches = Bernstein2D(jnp.zeros((2, 2, 3)))
+>>> patches(jnp.zeros((3, 1)), jnp.zeros((1, 4))).shape
+(2, 3, 4)
+>>> batched_patches = Bernstein2D(jnp.zeros((2, 3, 2, 3)))
+>>> batched_patches(jnp.zeros((4, 1)), jnp.zeros((1, 5))).shape
+(2, 3, 4, 5)
+>>> try:
+...     patches(jnp.zeros((2,)), jnp.zeros((3,)))
+... except ValueError as error:
+...     type(error).__name__
+'ValueError'
+```
 """
 
 from typing import ClassVar, Self
@@ -35,6 +60,67 @@ class _TensorBernstein(eqx.Module):
     $c_{\mathbf{i}}$ and its leading axes identify independently evaluated
     polynomials. Every axis argument refers to the parameter index $a$ in
     $\mathbf{u}$, never to a leading batch axis.
+
+    Batch dimensions
+    ----------------
+
+    The shared implementation broadcasts only leading coefficient axes for
+    arithmetic. Trailing $d$ axes are degree axes, so they are aligned by
+    polynomial degree rather than raw-array broadcasting.
+
+    For example, these raw arrays cannot be added:
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> try:
+    ...     jnp.zeros((2, 2, 3)) + jnp.zeros((3, 2))
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+    ```
+
+    The corresponding 2D Bernstein objects do add. The first has batch shape
+    ``(2,)`` and degree vector $(1,2)$; the second has no batch axes and
+    degree vector $(2,1)$. The scalar-batch polynomial broadcasts and each
+    degree axis is elevated independently:
+
+    ```python
+    >>> first = Bernstein2D(jnp.zeros((2, 2, 3)))
+    >>> second = Bernstein2D(jnp.zeros((3, 2)))
+    >>> (first + second).c.shape
+    (2, 3, 3)
+    ```
+
+    The same rule applies when both operands have multiple leading batch
+    axes. Their batch shapes are right-aligned independently of their degree
+    axes:
+
+    ```python
+    >>> left = Bernstein2D(jnp.zeros((2, 1, 2, 3)))   # Batch shape (2, 1).
+    >>> right = Bernstein2D(jnp.zeros((1, 3, 3, 2)))  # Batch shape (1, 3).
+    >>> (left + right).c.shape
+    (2, 3, 3, 3)
+    ```
+
+    This convention applies to ``+``, ``-``, and ``*``. Coordinate arrays,
+    conversely, create evaluation axes rather than pairing with batch axes:
+
+    ```python
+    >>> first(jnp.zeros((2,)), 0.5).shape
+    (2, 2)
+    >>> left(jnp.zeros((4, 1)), jnp.zeros((1, 5))).shape
+    (2, 1, 4, 5)
+    ```
+
+    True leading-batch incompatibility still raises an error:
+
+    ```python
+    >>> try:
+    ...     first + Bernstein2D(jnp.zeros((3, 2, 3)))
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+    ```
     """
 
     c: Float[jax.Array, "..."]
@@ -169,6 +255,9 @@ class _TensorBernstein(eqx.Module):
 
         Each parameter degree is elevated to
         $N_a=\max(n_a,m_a)$ before corresponding coefficients are added.
+
+        See :class:`_TensorBernstein` for the common arithmetic batch
+        convention and executable examples.
         """
         if not isinstance(other, type(self)):
             return NotImplemented
@@ -180,6 +269,9 @@ class _TensorBernstein(eqx.Module):
 
         Each parameter degree is elevated to
         $N_a=\max(n_a,m_a)$ before corresponding coefficients are subtracted.
+
+        See :class:`_TensorBernstein` for the common arithmetic batch
+        convention and executable examples.
         """
         if not isinstance(other, type(self)):
             return NotImplemented
@@ -204,6 +296,9 @@ class _TensorBernstein(eqx.Module):
 
         The implementation forms this separable product factor and accumulates
         all pairs of multi-indices with the same $\mathbf{k}$.
+
+        See :class:`_TensorBernstein` for the common arithmetic batch
+        convention and executable examples.
         """
         if not isinstance(other, type(self)):
             return NotImplemented
@@ -263,6 +358,19 @@ class _TensorBernstein(eqx.Module):
 
         The transformation is repeated ``m`` times. If $m>n_a$, the result is
         the zero polynomial with degree $0$ in $u_a$.
+
+        Batch dimensions
+        ----------------
+
+        Partial differentiation preserves leading axes and every unselected
+        parameter-degree axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> Bernstein2D(jnp.zeros((2, 3, 4))).deriv(axis=1).c.shape
+        (2, 3, 3)
+        ```
         """
         axis_index = self._axis_index(axis)
         w = jnp.moveaxis(self.c, axis_index, -1)
@@ -291,6 +399,19 @@ class _TensorBernstein(eqx.Module):
         $$
 
         The constant ``k`` broadcasts over all unselected coefficient axes.
+
+        Batch dimensions
+        ----------------
+
+        Integration preserves leading axes and adds one control point only on
+        the selected parameter axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> Bernstein2D(jnp.zeros((2, 3, 4))).int(axis=0).c.shape
+        (2, 4, 4)
+        ```
         """
         axis_index = self._axis_index(axis)
         w = jnp.moveaxis(self.c, axis_index, -1)
@@ -320,6 +441,23 @@ class _TensorBernstein(eqx.Module):
         Reducing every parameter axis evaluates the tensor-product expansion
         on $[0,1]^d$. Parameter arrays broadcast together to form evaluation
         axes after the leading coefficient axes.
+
+        Batch dimensions
+        ----------------
+
+        Broadcast-compatible coordinate arrays form shared evaluation axes
+        after leading coefficient axes:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> patch = Bernstein2D(jnp.zeros((2, 2, 3)))
+        >>> patch(jnp.linspace(0.0, 1.0, 4), 0.5).shape
+        (2, 4)
+        >>> batched = Bernstein2D(jnp.zeros((2, 3, 2, 3)))
+        >>> batched(jnp.zeros((4, 1)), jnp.zeros((1, 5))).shape
+        (2, 3, 4, 5)
+        ```
         """
         if len(ts) != self.parameter_dimensions:
             raise TypeError(
@@ -363,6 +501,20 @@ class _TensorBernstein(eqx.Module):
 
         Their selected-axis control polygons are the first and reversed-last
         entries of the corresponding De Casteljau table.
+
+        Batch dimensions
+        ----------------
+
+        The split value may have the leading batch shape. Both results keep
+        the same coefficient shape as the input:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> lower, upper = Bernstein2D(jnp.zeros((2, 2, 3))).split(jnp.array([0.25, 0.75]))
+        >>> lower.c.shape, upper.c.shape
+        ((2, 2, 3), (2, 2, 3))
+        ```
         """
         axis_index = self._axis_index(axis)
         w = jnp.moveaxis(self.c, axis_index, -1)
@@ -397,6 +549,22 @@ class _TensorBernstein(eqx.Module):
         $$
 
         Its coefficient axes retain the order of the unselected parameters.
+
+        Batch dimensions
+        ----------------
+
+        ``value`` broadcasts against leading coefficient axes. The result
+        keeps those leading axes and removes exactly one trailing
+        parameter-degree axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> Bernstein2D(jnp.zeros((2, 2, 3))).slice(jnp.array([0.25, 0.75]), axis=0).c.shape
+        (2, 3)
+        >>> Bernstein2D(jnp.zeros((2, 3, 2, 3))).slice(jnp.zeros((2, 1)), axis=0).c.shape
+        (2, 3, 3)
+        ```
         """
         self._axis_index(axis)
         value = jnp.asarray(value, dtype=self.c.dtype)
@@ -434,6 +602,20 @@ class _TensorBernstein(eqx.Module):
 
         Here $\mathbf{i}_{\neg a}$ is the multi-index with component $a$
         omitted, and the remaining coefficient axes keep that order.
+
+        Batch dimensions
+        ----------------
+
+        The integral is evaluated independently at every leading index. It
+        preserves leading axes and removes the selected trailing
+        parameter-degree axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein3D
+        >>> Bernstein3D(jnp.zeros((2, 2, 3, 4))).integrate_out(axis=1).c.shape
+        (2, 2, 4)
+        ```
         """
         axis_index = self._axis_index(axis)
         order = self.c.shape[axis_index]
@@ -459,6 +641,25 @@ class _TensorBernstein(eqx.Module):
         $a_a$ and $k$ copies of $b_a$. The resulting univariate factors are
         multiplied with the Bernstein product identity, yielding degree
         $\sum_a n_a$ without solving a linear system.
+
+        Batch dimensions
+        ----------------
+
+        ``start`` and ``end`` may each have shape ``(*batch, d)`` and
+        broadcast with the leading coefficient axes. The result keeps the
+        broadcast leading shape and replaces all parameter-degree axes with
+        one univariate coefficient axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import Bernstein2D
+        >>> patch = Bernstein2D(jnp.zeros((2, 2, 3)))
+        >>> patch.segment(jnp.zeros((2, 2)), jnp.ones((2, 2))).c.shape
+        (2, 4)
+        >>> patch = Bernstein2D(jnp.zeros((2, 3, 2, 3)))
+        >>> patch.segment(jnp.zeros((2, 1, 2)), jnp.ones((1, 3, 2))).c.shape
+        (2, 3, 4)
+        ```
         """
         start = jnp.asarray(start, dtype=self.c.dtype)
         end = jnp.asarray(end, dtype=self.c.dtype)
