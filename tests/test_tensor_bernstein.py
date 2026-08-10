@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
-from xbernstein import Bernstein, Bernstein2D, Bernstein3D, Bernstein4D
+from xbernstein import Bernstein, Bernstein2D, Bernstein3D, Bernstein4D, minimize
 
 
 def tensor_value_from_basis(coefficients, parameters):
@@ -189,6 +189,37 @@ class TensorBernsteinTest(unittest.TestCase):
             )
         )
         npt.assert_allclose(polynomial(0.25, 0.75), jnp.array([1.25, 5.25]))
+
+    def test_minimize_tensor_polynomials_and_jvp(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            coefficients = jnp.zeros((2,) * dimensions).at[(1,) * dimensions].set(-1.0)
+            polynomial = polynomial_type(coefficients)
+            result = minimize(polynomial, max_steps=20, eps=1e-7)
+            batched = polynomial_type(jnp.stack([coefficients, coefficients + 2.0]))
+
+            with self.subTest(polynomial_type=polynomial_type.__name__):
+                npt.assert_allclose(result.f, -1.0)
+                npt.assert_allclose(result.x, jnp.ones(dimensions))
+                self.assertEqual(minimize(batched, max_steps=20).f.shape, (2,))
+                self.assertEqual(
+                    minimize(batched, max_steps=20).x.shape, (2, dimensions)
+                )
+
+                def minimum(coefficients):
+                    return minimize(polynomial_type(coefficients), max_steps=20).f
+
+                _, tangent = jax.jvp(
+                    minimum, (coefficients,), (jnp.ones_like(coefficients),)
+                )
+                npt.assert_allclose(tangent, 1.0)
+                npt.assert_allclose(
+                    jax.vmap(minimum)(jnp.stack([coefficients, coefficients + 2.0])),
+                    jnp.array([-1.0, 1.0]),
+                )
 
     def test_segment_matches_tensor_evaluation(self):
         cases = (
