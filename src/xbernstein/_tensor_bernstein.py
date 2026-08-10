@@ -710,6 +710,9 @@ class _TensorBernstein(eqx.Module):
             coefficients = jnp.moveaxis(coefficients, -1, axis_index)
 
         degree = sum(axis_size - 1 for axis_size in degrees)
+        if degree == 0:
+            return Bernstein(coefficients.reshape(batch_shape + (1,)))
+
         multi_indices = jnp.indices(degrees)
         total_indices = jnp.sum(multi_indices, axis=0)
         scale = jnp.ones(degrees, dtype=self.c.dtype)
