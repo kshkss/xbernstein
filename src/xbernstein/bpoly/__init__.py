@@ -397,12 +397,12 @@ def _minimize_jvp(
 
     A boundary minimizer is treated as locally fixed, so its tangent is zero.
     """
-    coeffs, max_steps, eps = primals
-    coeffs = Bernstein(coeffs)
+    coefficients, max_steps, eps = primals
+    coeffs = Bernstein(coefficients)
     t_coeffs, _, _ = tangents
     t_coeffs = Bernstein(t_coeffs)
 
-    primal_out = _minimize(coeffs, max_steps=max_steps, eps=eps)
+    primal_out = _minimize(coefficients, max_steps=max_steps, eps=eps)
     x_star = primal_out[1]
 
     # f(c) = min_t p_c(t) に対して envelope theorem を使い、
@@ -444,10 +444,10 @@ def minimize(
     axes only to vectorize the scalar solver, then restores their original
     arrangement in :class:`OptimizeResult`.
     """
-    shape = bpoly.shape[:-1]
-    n = bpoly.shape[-1]
-    coeffs = Bernstein(bpoly.c.reshape([-1, n]))
+    shape = bpoly.shape
+    n = bpoly.order + 1
+    coefficients = bpoly.c.reshape([-1, n])
 
-    fs, xs = jax.vmap(_minimize, in_axes=(0, None, None))(coeffs, max_steps, eps)
+    fs, xs = jax.vmap(_minimize, in_axes=(0, None, None))(coefficients, max_steps, eps)
     results = OptimizeResult(f=fs.reshape(shape), x=xs.reshape(shape))
     return results
