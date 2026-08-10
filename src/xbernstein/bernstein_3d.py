@@ -1,6 +1,20 @@
 from typing import ClassVar
 
-from ._tensor_bernstein import _TensorBernstein
+import jax
+
+from ._tensor_bernstein import _TensorBernstein, _tensor_minimize, _tensor_minimize_jvp
+
+
+@jax.custom_jvp
+def _minimize(coefficients, max_steps: int = 200, eps: float = 1e-6):
+    return _tensor_minimize(coefficients, max_steps, eps)
+
+
+@_minimize.defjvp
+def _minimize_jvp(primals, tangents):
+    coefficients, max_steps, eps = primals
+    tangent_coefficients, _, _ = tangents
+    return _tensor_minimize_jvp(coefficients, tangent_coefficients, max_steps, eps)
 
 
 class Bernstein3D(_TensorBernstein):

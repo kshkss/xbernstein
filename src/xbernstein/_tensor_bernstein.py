@@ -42,6 +42,7 @@ batch axes.
 """
 
 import math
+import itertools
 from typing import ClassVar, Self
 
 import equinox as eqx
@@ -51,6 +52,164 @@ import jax.scipy.special as jss
 from jaxtyping import Float, Int
 
 from .bernstein import Bernstein
+
+
+def _evaluate_tensor_coefficients(
+    coefficients: jax.Array, point: jax.Array
+) -> jax.Array:
+    """Evaluate an unbatched tensor Bernstein control array at one point."""
+    w = coefficients
+    for axis in range(point.shape[0] - 1, -1, -1):
+        weight = point[axis]
+        for _ in range(w.shape[-1] - 1):
+            w = (1.0 - weight) * w[..., :-1] + weight * w[..., 1:]
+        w = w[..., 0]
+    return w
+
+
+def _split_tensor_coefficients(
+    coefficients: jax.Array, axis: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    """Bisect one dynamically selected tensor parameter axis at one half."""
+    dimensions = coefficients.ndim
+
+    def branch(selected_axis: int):
+        def split(c: jax.Array) -> tuple[jax.Array, jax.Array]:
+            w = jnp.moveaxis(c, selected_axis, -1)
+            left, right = [w[..., 0]], [w[..., -1]]
+            for _ in range(w.shape[-1] - 1):
+                w = 0.5 * (w[..., :-1] + w[..., 1:])
+                left.append(w[..., 0])
+                right.append(w[..., -1])
+            return (
+                jnp.moveaxis(jnp.stack(left, axis=-1), -1, selected_axis),
+                jnp.moveaxis(jnp.stack(right[::-1], axis=-1), -1, selected_axis),
+            )
+
+        return split
+
+    return jax.lax.switch(
+        axis, tuple(branch(i) for i in range(dimensions)), coefficients
+    )
+
+
+def _tensor_derivative(coefficients: jax.Array, axis: int) -> jax.Array:
+    """Differentiate an unbatched tensor Bernstein control array once."""
+    w = jnp.moveaxis(coefficients, axis, -1)
+    degree = w.shape[-1] - 1
+    if degree == 0:
+        w = jnp.zeros(w.shape[:-1] + (1,), dtype=w.dtype)
+    else:
+        w = degree * (w[..., 1:] - w[..., :-1])
+    return jnp.moveaxis(w, -1, axis)
+
+
+def _tensor_minimize(
+    coefficients: jax.Array, max_steps: int, eps: float
+) -> tuple[jax.Array, jax.Array]:
+    """Globally minimize one tensor Bernstein polynomial by box subdivision."""
+    dimensions = coefficients.ndim
+    capacity = max_steps + 1
+    corners = jnp.asarray(list(itertools.product((0, 1), repeat=dimensions)))
+    initial_points = jnp.concatenate(
+        [corners, jnp.full((1, dimensions), 0.5, dtype=coefficients.dtype)]
+    )
+    initial_values = jax.vmap(
+        lambda point: _evaluate_tensor_coefficients(coefficients, point)
+    )(initial_points)
+    initial_index = jnp.argmin(initial_values)
+    lower = jnp.zeros((capacity, dimensions), dtype=coefficients.dtype)
+    upper = jnp.ones((capacity, dimensions), dtype=coefficients.dtype)
+    control = (
+        jnp.zeros((capacity,) + coefficients.shape, dtype=coefficients.dtype)
+        .at[0]
+        .set(coefficients)
+    )
+    bounds = (
+        jnp.full(capacity, jnp.inf, dtype=coefficients.dtype)
+        .at[0]
+        .set(jnp.min(coefficients))
+    )
+    state = (
+        lower,
+        upper,
+        control,
+        bounds,
+        initial_values[initial_index],
+        initial_points[initial_index],
+        0,
+    )
+
+    def condition(state):
+        _, _, _, bounds, value, _, step = state
+        return (step < max_steps) & ((value - jnp.min(bounds)) > eps)
+
+    def body(state):
+        lower, upper, control, bounds, value, point, step = state
+        index = jnp.argmin(bounds)
+        lo, hi, current = lower[index], upper[index], control[index]
+        axis = jnp.argmax(hi - lo)
+        left, right = _split_tensor_coefficients(current, axis)
+        midpoint = 0.5 * (lo + hi)
+        candidate_points = lo + initial_points * (hi - lo)
+        candidate_values = jax.vmap(
+            lambda candidate: _evaluate_tensor_coefficients(current, candidate)
+        )(initial_points)
+        candidate_index = jnp.argmin(candidate_values)
+        candidate_value = candidate_values[candidate_index]
+        replace = candidate_value < value
+        value = jnp.where(replace, candidate_value, value)
+        point = jnp.where(replace, candidate_points[candidate_index], point)
+        next_index = step + 1
+        lower = lower.at[next_index].set(lo.at[axis].set(midpoint[axis]))
+        upper = upper.at[index].set(hi.at[axis].set(midpoint[axis]))
+        control = control.at[index].set(left).at[next_index].set(right)
+        bounds = bounds.at[index].set(jnp.min(left)).at[next_index].set(jnp.min(right))
+        return lower, upper, control, bounds, value, point, step + 1
+
+    result = jax.lax.while_loop(condition, body, state)
+    return result[4], result[5]
+
+
+def _tensor_minimize_jvp(
+    coefficients: jax.Array, tangent_coefficients: jax.Array, max_steps: int, eps: float
+) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+    """Apply envelope and implicit-differentiation rules to tensor minimization."""
+    primal = _tensor_minimize(coefficients, max_steps, eps)
+    value, point = primal
+    dimensions = coefficients.ndim
+    tangent_value = _evaluate_tensor_coefficients(tangent_coefficients, point)
+    gradient_tangent = jnp.stack(
+        [
+            _evaluate_tensor_coefficients(
+                _tensor_derivative(tangent_coefficients, axis), point
+            )
+            for axis in range(dimensions)
+        ]
+    )
+    hessian = jnp.stack(
+        [
+            jnp.stack(
+                [
+                    _evaluate_tensor_coefficients(
+                        _tensor_derivative(
+                            _tensor_derivative(coefficients, row), column
+                        ),
+                        point,
+                    )
+                    for column in range(dimensions)
+                ]
+            )
+            for row in range(dimensions)
+        ]
+    )
+    tangent_point = jax.lax.cond(
+        jnp.any((point == 0.0) | (point == 1.0)),
+        lambda _: jnp.zeros_like(point),
+        lambda _: -jnp.linalg.solve(hessian, gradient_tangent),
+        operand=None,
+    )
+    return (value, point), (tangent_value, tangent_point)
 
 
 class _TensorBernstein(eqx.Module):
