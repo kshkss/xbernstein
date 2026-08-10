@@ -1,5 +1,6 @@
 import itertools
 import math
+import operator
 import unittest
 
 import jax
@@ -26,12 +27,55 @@ def tensor_value_from_basis(coefficients, parameters):
     return total
 
 
+def assert_jax_transformations(
+    test_case: unittest.TestCase, function, coefficients: jax.Array
+) -> None:
+    eager = function(coefficients)
+    jitted = jax.jit(function)(coefficients)
+    batched_coefficients = jnp.stack([coefficients, coefficients + 0.25])
+    vmapped = jax.vmap(function)(batched_coefficients)
+    expected_vmapped = jnp.stack([function(c) for c in batched_coefficients])
+    forward_jacobian = jax.jacfwd(function)(coefficients)
+    reverse_jacobian = jax.jacrev(function)(coefficients)
+
+    npt.assert_allclose(jitted, eager, rtol=1e-5, atol=1e-6)
+    npt.assert_allclose(vmapped, expected_vmapped, rtol=1e-5, atol=1e-6)
+    test_case.assertEqual(forward_jacobian.shape, eager.shape + coefficients.shape)
+    npt.assert_allclose(forward_jacobian, reverse_jacobian, rtol=1e-5, atol=1e-6)
+    test_case.assertTrue(bool(jnp.all(jnp.isfinite(forward_jacobian))))
+
+
 class TensorBernsteinTest(unittest.TestCase):
     cases = (
         (Bernstein2D, (2, 2), (0.25, 0.75)),
         (Bernstein3D, (2, 2, 2), (0.25, 0.5, 0.75)),
         (Bernstein4D, (2, 2, 2, 2), (0.25, 0.5, 0.75, 0.125)),
     )
+
+    def test_arithmetic_broadcasts_multidimensional_batch_shapes(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            left = polynomial_type(jnp.ones((2, 1) + (2,) * dimensions))
+            right = polynomial_type(jnp.ones((1, 3) + (3,) * dimensions))
+
+            with self.subTest(polynomial_type=polynomial_type.__name__):
+                self.assertEqual((left + right).c.shape, (2, 3) + (3,) * dimensions)
+                self.assertEqual((left - right).c.shape, (2, 3) + (3,) * dimensions)
+                self.assertEqual((left * right).c.shape, (2, 3) + (4,) * dimensions)
+
+    def test_arithmetic_rejects_different_tensor_dimensions(self):
+        polynomial_2d = Bernstein2D(jnp.ones((2, 2)))
+        polynomial_3d = Bernstein3D(jnp.ones((2, 2, 2)))
+
+        for operation in (operator.add, operator.sub, operator.mul):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(
+                    TypeError, "Bernstein2D arithmetic requires another Bernstein2D"
+                ):
+                    operation(polynomial_2d, polynomial_3d)
 
     def test_order_matches_parameter_coefficient_axes(self):
         cases = (
@@ -101,6 +145,39 @@ class TensorBernsteinTest(unittest.TestCase):
                     right(*split_parameters),
                     polynomial(*parameters[:axis], 0.5, *parameters[axis + 1 :]),
                 )
+
+    def test_public_operations_support_jax_transformations(self):
+        for polynomial_type, shape, _ in self.cases:
+            dimensions = len(shape)
+            other = jnp.ones(shape)
+            start = jnp.zeros(dimensions)
+            end = jnp.linspace(0.25, 0.75, dimensions)
+
+            def split_coefficients(c):
+                lower, upper = polynomial_type(c).split(jnp.array(0.4), axis=0)
+                return jnp.stack((lower.c, upper.c))
+
+            operations = {
+                "add": lambda c: (polynomial_type(c) + polynomial_type(other)).c,
+                "sub": lambda c: (polynomial_type(c) - polynomial_type(other)).c,
+                "mul": lambda c: (polynomial_type(c) * polynomial_type(other)).c,
+                "deriv": lambda c: polynomial_type(c).deriv(m=1, axis=0).c,
+                "int": lambda c: polynomial_type(c).int(k=0.25, axis=0).c,
+                "call": lambda c: polynomial_type(c)(*(0.4,) * dimensions),
+                "split": split_coefficients,
+                "slice": lambda c: polynomial_type(c).slice(0.4, axis=0).c,
+                "integrate_out": lambda c: polynomial_type(c).integrate_out(axis=0).c,
+                "segment": lambda c: polynomial_type(c).segment(start, end).c,
+            }
+            coefficients = jnp.arange(math.prod(shape), dtype=jnp.float32).reshape(
+                shape
+            )
+
+            for name, operation in operations.items():
+                with self.subTest(
+                    polynomial_type=polynomial_type.__name__, operation=name
+                ):
+                    assert_jax_transformations(self, operation, coefficients)
 
     def test_batched_evaluation(self):
         polynomial = Bernstein2D(
@@ -177,6 +254,30 @@ class TensorBernsteinTest(unittest.TestCase):
         )
         npt.assert_allclose(restricted(parameters), expected, rtol=1e-5)
 
+    def test_segment_rejects_invalid_endpoint_shapes(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            polynomial = polynomial_type(jnp.ones((1,) * dimensions))
+
+            with self.subTest(polynomial_type=polynomial_type.__name__, case="scalar"):
+                with self.assertRaises(ValueError):
+                    polynomial.segment(jnp.array(0.0), jnp.zeros(dimensions))
+            with self.subTest(
+                polynomial_type=polynomial_type.__name__, case="coordinate_length"
+            ):
+                with self.assertRaises(ValueError):
+                    polynomial.segment(jnp.zeros(dimensions - 1), jnp.zeros(dimensions))
+            with self.subTest(
+                polynomial_type=polynomial_type.__name__, case="batch_shape"
+            ):
+                with self.assertRaises(ValueError):
+                    polynomial.segment(
+                        jnp.zeros((2, dimensions)), jnp.zeros((3, dimensions))
+                    )
+
     def test_slice_and_integrate_out_reduce_dimensions(self):
         cases = (
             (Bernstein2D, Bernstein, (2, 3), (0.25, 0.75)),
@@ -226,6 +327,32 @@ class TensorBernsteinTest(unittest.TestCase):
                     )(value),
                     polynomial(*parameters),
                 )
+
+    def test_degree_zero_tensor_polynomial_operations(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            polynomial = polynomial_type(jnp.full((1,) * dimensions, 2.0))
+            parameters = (0.25,) * dimensions
+            lower, upper = polynomial.split(axis=0)
+            sliced = polynomial.slice(0.25, axis=0)
+            integrated = polynomial.integrate_out(axis=0)
+            segment = polynomial.segment(jnp.zeros(dimensions), jnp.ones(dimensions))
+
+            with self.subTest(polynomial_type=polynomial_type.__name__):
+                npt.assert_allclose(polynomial(*parameters), 2.0)
+                npt.assert_allclose(
+                    polynomial.deriv(axis=0).c, jnp.zeros_like(polynomial.c)
+                )
+                npt.assert_allclose(lower.c, polynomial.c)
+                npt.assert_allclose(upper.c, polynomial.c)
+                npt.assert_allclose(sliced.c, jnp.full((1,) * (dimensions - 1), 2.0))
+                npt.assert_allclose(
+                    integrated.c, jnp.full((1,) * (dimensions - 1), 2.0)
+                )
+                npt.assert_allclose(segment.c, jnp.array([2.0]))
 
     def test_slice_supports_batched_values_and_validates_axes(self):
         polynomial = Bernstein2D(

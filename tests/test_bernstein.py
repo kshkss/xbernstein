@@ -1,11 +1,12 @@
 import math
+import operator
 import unittest
 
 import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
-from xbernstein import Bernstein
+from xbernstein import Bernstein, Bernstein2D
 from xbernstein.bernstein import _elevate, minimize
 
 
@@ -18,7 +19,44 @@ def bernstein_basis(degree: int, t: jax.Array) -> jax.Array:
     )
 
 
+def assert_jax_transformations(
+    test_case: unittest.TestCase, function, coefficients: jax.Array
+) -> None:
+    eager = function(coefficients)
+    jitted = jax.jit(function)(coefficients)
+    batched_coefficients = jnp.stack([coefficients, coefficients + 0.25])
+    vmapped = jax.vmap(function)(batched_coefficients)
+    expected_vmapped = jnp.stack([function(c) for c in batched_coefficients])
+    forward_jacobian = jax.jacfwd(function)(coefficients)
+    reverse_jacobian = jax.jacrev(function)(coefficients)
+
+    npt.assert_allclose(jitted, eager, rtol=1e-5, atol=1e-6)
+    npt.assert_allclose(vmapped, expected_vmapped, rtol=1e-5, atol=1e-6)
+    test_case.assertEqual(forward_jacobian.shape, eager.shape + coefficients.shape)
+    npt.assert_allclose(forward_jacobian, reverse_jacobian, rtol=1e-5, atol=1e-6)
+    test_case.assertTrue(bool(jnp.all(jnp.isfinite(forward_jacobian))))
+
+
 class BernsteinFormulaTest(unittest.TestCase):
+    def test_arithmetic_broadcasts_multidimensional_batch_shapes(self):
+        left = Bernstein(jnp.ones((2, 1, 3)))
+        right = Bernstein(jnp.ones((1, 3, 2)))
+
+        self.assertEqual((left + right).c.shape, (2, 3, 3))
+        self.assertEqual((left - right).c.shape, (2, 3, 3))
+        self.assertEqual((left * right).c.shape, (2, 3, 4))
+
+    def test_arithmetic_rejects_tensor_polynomial_types(self):
+        polynomial = Bernstein(jnp.ones(2))
+        tensor_polynomial = Bernstein2D(jnp.ones((2, 2)))
+
+        for operation in (operator.add, operator.sub, operator.mul):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(
+                    TypeError, "Bernstein arithmetic requires another Bernstein"
+                ):
+                    operation(polynomial, tensor_polynomial)
+
     def test_order_matches_final_coefficient_axis(self):
         scalar = Bernstein(jnp.array([1.0, 2.0, 3.0, 4.0]))
         batched = Bernstein(jnp.zeros((2, 3, 5)))
@@ -90,6 +128,13 @@ class BernsteinFormulaTest(unittest.TestCase):
         npt.assert_allclose(antiderivative.deriv()(parameters), polynomial(parameters))
         npt.assert_allclose(polynomial.deriv(m=5).c, jnp.zeros(1))
 
+    def test_antiderivative_broadcasts_batch_constants(self):
+        polynomial = Bernstein(jnp.zeros((2, 3)))
+        antiderivative = polynomial.int(k=jnp.array([1.0, 2.0]))
+
+        self.assertEqual(antiderivative.c.shape, (2, 4))
+        npt.assert_allclose(antiderivative(0.0), jnp.array([1.0, 2.0]))
+
     def test_basis_sum_and_de_casteljau_evaluation(self):
         coefficients = jnp.array([1.0, -2.0, 3.0, 5.0])
         polynomial = Bernstein(coefficients)
@@ -113,6 +158,25 @@ class BernsteinFormulaTest(unittest.TestCase):
             rtol=1e-5,
         )
 
+    def test_public_operations_support_jax_transformations(self):
+        other = jnp.array([-0.5, 1.5])
+        operations = {
+            "add": lambda c: (Bernstein(c) + Bernstein(other)).c,
+            "sub": lambda c: (Bernstein(c) - Bernstein(other)).c,
+            "mul": lambda c: (Bernstein(c) * Bernstein(other)).c,
+            "deriv": lambda c: Bernstein(c).deriv(m=1).c,
+            "int": lambda c: Bernstein(c).int(k=0.25).c,
+            "call": lambda c: Bernstein(c)(jnp.array(0.4)),
+            "split": lambda c: jnp.stack(
+                tuple(piece.c for piece in Bernstein(c).split(jnp.array(0.4)))
+            ),
+        }
+        coefficients = jnp.array([0.25, -0.5, 1.0])
+
+        for name, operation in operations.items():
+            with self.subTest(operation=name):
+                assert_jax_transformations(self, operation, coefficients)
+
     def test_minimize_and_batch_shape(self):
         # (t - 0.3)^2 in the degree-2 Bernstein basis.
         interior = Bernstein(jnp.array([0.09, -0.21, 0.49]))
@@ -130,6 +194,38 @@ class BernsteinFormulaTest(unittest.TestCase):
         self.assertEqual(boundary.order, 1)
         self.assertEqual(batched_result.shape, (2,))
         npt.assert_allclose(batched_result.f, jnp.array([0.0, 1.0]), atol=1e-6)
+
+    def test_degree_zero_polynomial_operations(self):
+        polynomial = Bernstein(jnp.array([2.0]))
+        other = Bernstein(jnp.array([3.0]))
+        parameters = jnp.linspace(0.0, 1.0, 5)
+        left, right = polynomial.split(0.4)
+        result = minimize(polynomial, max_steps=10, eps=1e-7)
+
+        npt.assert_allclose(polynomial(parameters), jnp.full(5, 2.0))
+        npt.assert_allclose((polynomial + other).c, jnp.array([5.0]))
+        npt.assert_allclose(
+            (polynomial * other).c, jnp.array([6.0]), rtol=1e-5, atol=1e-6
+        )
+        npt.assert_allclose(polynomial.deriv().c, jnp.array([0.0]))
+        npt.assert_allclose(polynomial.int().c, jnp.array([0.0, 2.0]))
+        npt.assert_allclose(left.c, polynomial.c)
+        npt.assert_allclose(right.c, polynomial.c)
+        npt.assert_allclose(result.f, 2.0)
+
+    def test_minimize_multimodal_and_max_steps_limit(self):
+        # (t - 0.2)^2 (t - 0.8)^2 in the degree-4 Bernstein basis.
+        coefficients = jnp.array([0.0256, -0.0544, 0.0856, -0.0544, 0.0256])
+        polynomial = Bernstein(coefficients)
+        stopped = minimize(polynomial, max_steps=0, eps=1e-7)
+        refined = minimize(polynomial, max_steps=100, eps=1e-7)
+
+        npt.assert_allclose(stopped.f, 0.0256, atol=1e-7)
+        npt.assert_allclose(stopped.x, 1.0, atol=1e-7)
+        npt.assert_allclose(refined.f, 0.0, atol=1e-6)
+        self.assertLess(
+            min(abs(float(refined.x) - 0.2), abs(float(refined.x) - 0.8)), 1e-3
+        )
 
     def test_minimize_jvp_matches_documented_rules(self):
         coefficients = jnp.array([0.09, -0.21, 0.49])
@@ -157,6 +253,34 @@ class BernsteinFormulaTest(unittest.TestCase):
             minimum, (jnp.array([0.0, 1.0]),), (jnp.array([1.0, -1.0]),)
         )
         npt.assert_allclose(boundary_tangent_minimizer, 0.0)
+
+    def test_minimize_jvp_composes_with_vmap(self):
+        coefficients = jnp.array(
+            [
+                [0.09, -0.21, 0.49],
+                [1.09, 0.79, 1.49],
+            ]
+        )
+        tangents = jnp.array(
+            [
+                [0.1, 0.1, 0.1],
+                [0.2, 0.2, 0.2],
+            ]
+        )
+
+        def minimum_value(coefficients):
+            return minimize(Bernstein(coefficients), max_steps=100, eps=1e-7).f
+
+        values, tangent_values = jax.vmap(
+            lambda coefficients, tangent: jax.jvp(
+                minimum_value, (coefficients,), (tangent,)
+            )
+        )(coefficients, tangents)
+
+        self.assertEqual(values.shape, (2,))
+        self.assertEqual(tangent_values.shape, (2,))
+        npt.assert_allclose(values, jnp.array([0.0, 1.0]), atol=1e-6)
+        npt.assert_allclose(tangent_values, jnp.array([0.1, 0.2]), atol=1e-6)
 
 
 if __name__ == "__main__":
