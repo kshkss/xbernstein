@@ -194,6 +194,11 @@ class Bernstein(eqx.Module):
         See :class:`Bernstein` for the common arithmetic batch-broadcast
         convention and executable examples.
         """
+        if not isinstance(other, type(self)):
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
         c1 = self.c
         c2 = other.c
         target_n = max(c1.shape[-1], c2.shape[-1]) - 1
@@ -210,6 +215,11 @@ class Bernstein(eqx.Module):
         See :class:`Bernstein` for the common arithmetic batch-broadcast
         convention and executable examples.
         """
+        if not isinstance(other, type(self)):
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
         c1 = self.c
         c2 = other.c
         target_n = max(c1.shape[-1], c2.shape[-1]) - 1
@@ -235,6 +245,11 @@ class Bernstein(eqx.Module):
         See :class:`Bernstein` for the common arithmetic batch-broadcast
         convention and executable examples.
         """
+        if not isinstance(other, type(self)):
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
         c1 = self.c
         c2 = other.c
         n = c1.shape[-1] - 1
