@@ -98,7 +98,7 @@ class Bernstein(eqx.Module):
         )
         return type(self)(c_new)
 
-    def __call__(self, t: Float[jax.Array, " k"]) -> Float[jax.Array, "*batch, k"]:
+    def __call__(self, t: Float[jax.Array, " k"]) -> Float[jax.Array, "*batch k"]:
         """ド・カステリョのアルゴリズムによる代入・評価"""
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
