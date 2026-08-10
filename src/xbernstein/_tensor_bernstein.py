@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import jax.scipy.special as jss
 from jaxtyping import Float, Int
 
-from .bpoly import Bernstein
+from .bernstein import Bernstein
 
 
 class _TensorBernstein(eqx.Module):
