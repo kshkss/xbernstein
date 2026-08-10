@@ -2,12 +2,38 @@ from .bernstein import Bernstein, _minimize
 from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
+from .hermite import (
+    hermite_interpolate_1d,
+    hermite_interpolate_2d,
+    hermite_interpolate_3d,
+    hermite_interpolate_4d,
+    linear_interpolate_1d,
+    linear_interpolate_2d,
+    linear_interpolate_3d,
+    linear_interpolate_4d,
+    quintic_hermite_interpolate_1d,
+    quintic_hermite_interpolate_2d,
+    quintic_hermite_interpolate_3d,
+    quintic_hermite_interpolate_4d,
+)
 
 __all__ = [
     "Bernstein",
     "Bernstein2D",
     "Bernstein3D",
     "Bernstein4D",
+    "linear_interpolate_1d",
+    "linear_interpolate_2d",
+    "linear_interpolate_3d",
+    "linear_interpolate_4d",
+    "hermite_interpolate_1d",
+    "hermite_interpolate_2d",
+    "hermite_interpolate_3d",
+    "hermite_interpolate_4d",
+    "quintic_hermite_interpolate_1d",
+    "quintic_hermite_interpolate_2d",
+    "quintic_hermite_interpolate_3d",
+    "quintic_hermite_interpolate_4d",
     "maximize",
     "minimize",
 ]
