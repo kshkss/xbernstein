@@ -74,6 +74,19 @@ class Bernstein(eqx.Module):
         return self.c.shape[:-1]
 
     @property
+    def order(self) -> int:
+        r"""Return the polynomial degree $n$.
+
+        The final coefficient axis stores $c_0,\ldots,c_n$, so its length
+        satisfies
+
+        $$
+        \text{``c.shape[-1]``} = n + 1 = \text{``order``} + 1.
+        $$
+        """
+        return self.c.shape[-1] - 1
+
+    @property
     def dtype(self) -> str:
         """Return the scalar field used for the coefficients $c_i$."""
         return str(self.c.dtype)
