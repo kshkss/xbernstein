@@ -260,7 +260,10 @@ class _TensorBernstein(eqx.Module):
         convention and executable examples.
         """
         if not isinstance(other, type(self)):
-            return NotImplemented
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
         c1, c2 = self._aligned_coefficients(other)
         return type(self)(c1 + c2)
 
@@ -274,7 +277,10 @@ class _TensorBernstein(eqx.Module):
         convention and executable examples.
         """
         if not isinstance(other, type(self)):
-            return NotImplemented
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
         c1, c2 = self._aligned_coefficients(other)
         return type(self)(c1 - c2)
 
@@ -301,7 +307,10 @@ class _TensorBernstein(eqx.Module):
         convention and executable examples.
         """
         if not isinstance(other, type(self)):
-            return NotImplemented
+            raise TypeError(
+                f"{type(self).__name__} arithmetic requires another "
+                f"{type(self).__name__}"
+            )
 
         d = self.parameter_dimensions
         batch_shape = jnp.broadcast_shapes(self.shape, other.shape)
