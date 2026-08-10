@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
-from xbernstein import Bernstein, Bernstein2D, minimize
+from xbernstein import Bernstein, Bernstein2D, maximize, minimize
 from xbernstein.bernstein import _elevate
 
 
@@ -194,6 +194,29 @@ class BernsteinFormulaTest(unittest.TestCase):
         self.assertEqual(boundary.order, 1)
         self.assertEqual(batched_result.shape, (2,))
         npt.assert_allclose(batched_result.f, jnp.array([0.0, 1.0]), atol=1e-6)
+
+    def test_maximize_matches_negated_minimize_and_jvp(self):
+        coefficients = jnp.array([0.0, 1.0])
+        polynomial = Bernstein(coefficients)
+        batched = Bernstein(jnp.stack([coefficients, coefficients - 2.0]))
+        result = maximize(polynomial, max_steps=20, eps=1e-7)
+
+        npt.assert_allclose(result.f, 1.0)
+        npt.assert_allclose(result.x, 1.0)
+        npt.assert_allclose(
+            result.f, -minimize(Bernstein(-coefficients), max_steps=20, eps=1e-7).f
+        )
+        self.assertEqual(maximize(batched, max_steps=20).f.shape, (2,))
+
+        def maximum(c):
+            return maximize(Bernstein(c), max_steps=20).f
+
+        _, tangent = jax.jvp(maximum, (coefficients,), (jnp.ones_like(coefficients),))
+        npt.assert_allclose(tangent, 1.0)
+        npt.assert_allclose(
+            jax.vmap(maximum)(jnp.stack([coefficients, coefficients - 2.0])),
+            jnp.array([1.0, -1.0]),
+        )
 
     def test_degree_zero_polynomial_operations(self):
         polynomial = Bernstein(jnp.array([2.0]))

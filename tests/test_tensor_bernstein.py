@@ -7,7 +7,14 @@ import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
-from xbernstein import Bernstein, Bernstein2D, Bernstein3D, Bernstein4D, minimize
+from xbernstein import (
+    Bernstein,
+    Bernstein2D,
+    Bernstein3D,
+    Bernstein4D,
+    maximize,
+    minimize,
+)
 
 
 def tensor_value_from_basis(coefficients, parameters):
@@ -219,6 +226,40 @@ class TensorBernsteinTest(unittest.TestCase):
                 npt.assert_allclose(
                     jax.vmap(minimum)(jnp.stack([coefficients, coefficients + 2.0])),
                     jnp.array([-1.0, 1.0]),
+                )
+
+    def test_maximize_tensor_polynomials_and_jvp(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            coefficients = jnp.zeros((2,) * dimensions).at[(1,) * dimensions].set(1.0)
+
+            def maximum(c):
+                return maximize(polynomial_type(c), max_steps=20).f
+
+            with self.subTest(polynomial_type=polynomial_type.__name__):
+                result = maximize(polynomial_type(coefficients), max_steps=20)
+                npt.assert_allclose(result.f, 1.0)
+                npt.assert_allclose(result.x, jnp.ones(dimensions))
+                npt.assert_allclose(
+                    result.f, -minimize(polynomial_type(-coefficients), max_steps=20).f
+                )
+                self.assertEqual(
+                    maximize(
+                        polynomial_type(jnp.stack([coefficients, coefficients - 2.0])),
+                        max_steps=20,
+                    ).x.shape,
+                    (2, dimensions),
+                )
+                _, tangent = jax.jvp(
+                    maximum, (coefficients,), (jnp.ones_like(coefficients),)
+                )
+                npt.assert_allclose(tangent, 1.0)
+                npt.assert_allclose(
+                    jax.vmap(maximum)(jnp.stack([coefficients, coefficients - 2.0])),
+                    jnp.array([1.0, -1.0]),
                 )
 
     def test_segment_matches_tensor_evaluation(self):
