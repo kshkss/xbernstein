@@ -361,6 +361,14 @@ class Bernstein(eqx.Module):
         c = self.c
         t = jnp.asarray(t, dtype=c.dtype)
 
+        if c.shape[-1] == 1:
+            if t.ndim == 0:
+                return c[..., 0]
+            return jnp.broadcast_to(
+                c[..., 0].reshape(c.shape[:-1] + (1,) * t.ndim),
+                c.shape[:-1] + t.shape,
+            )
+
         # scalar t -> shared for all batch items
         if t.ndim == 0:
             tt = jnp.broadcast_to(t, c.shape[:-1])[..., None]
