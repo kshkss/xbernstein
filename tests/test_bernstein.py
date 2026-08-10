@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
-from xbernstein import Bernstein, Bernstein2D
-from xbernstein.bernstein import _elevate, minimize
+from xbernstein import Bernstein, Bernstein2D, minimize
+from xbernstein.bernstein import _elevate
 
 
 def bernstein_basis(degree: int, t: jax.Array) -> jax.Array:
