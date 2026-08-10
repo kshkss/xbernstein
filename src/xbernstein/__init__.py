@@ -3,7 +3,14 @@ from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 
-__all__ = ["Bernstein", "Bernstein2D", "Bernstein3D", "Bernstein4D", "minimize"]
+__all__ = [
+    "Bernstein",
+    "Bernstein2D",
+    "Bernstein3D",
+    "Bernstein4D",
+    "maximize",
+    "minimize",
+]
 
 
 import jax
@@ -111,3 +118,26 @@ def minimize(
     raise TypeError(
         f"minimize requires a Bernstein polynomial, got {type(bpoly).__name__}"
     )
+
+
+def maximize(
+    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D,
+    max_steps: int = 200,
+    eps: float = 1e-6,
+) -> OptimizeResult:
+    r"""Approximate the global maximum of a 1D--4D Bernstein polynomial.
+
+    The implementation uses
+
+    $$
+    \max_{\mathbf{u}}p(\mathbf{u})
+    =-\min_{\mathbf{u}}\left[-p(\mathbf{u})\right].
+    $$
+
+    It therefore has the same branch-and-bound convergence and batching
+    behavior as :func:`minimize`. For a one-dimensional polynomial, ``f`` and
+    ``x`` have shape ``(*batch,)``; for a $d$-dimensional tensor polynomial,
+    they have shapes ``(*batch,)`` and ``(*batch, d)``, respectively.
+    """
+    result = minimize(type(bpoly)(-bpoly.c), max_steps=max_steps, eps=eps)
+    return OptimizeResult(f=-result.f, x=result.x)
