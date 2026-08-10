@@ -1,0 +1,361 @@
+import itertools
+import math
+import unittest
+
+import jax
+import jax.numpy as jnp
+import numpy.testing as npt
+
+from xbernstein import Bernstein, Bernstein2D, Bernstein3D, Bernstein4D
+
+
+def tensor_value_from_basis(coefficients, parameters):
+    degrees = tuple(size - 1 for size in coefficients.shape)
+    total = 0.0
+    for index in itertools.product(*(range(size) for size in coefficients.shape)):
+        basis = 1.0
+        for axis, (degree, coefficient_index, parameter) in enumerate(
+            zip(degrees, index, parameters)
+        ):
+            basis *= (
+                math.comb(degree, coefficient_index)
+                * parameter**coefficient_index
+                * (1.0 - parameter) ** (degree - coefficient_index)
+            )
+        total += coefficients[index] * basis
+    return total
+
+
+class TensorBernsteinTest(unittest.TestCase):
+    cases = (
+        (Bernstein2D, (2, 2), (0.25, 0.75)),
+        (Bernstein3D, (2, 2, 2), (0.25, 0.5, 0.75)),
+        (Bernstein4D, (2, 2, 2, 2), (0.25, 0.5, 0.75, 0.125)),
+    )
+
+    def test_order_matches_parameter_coefficient_axes(self):
+        cases = (
+            (Bernstein2D, (2, 3)),
+            (Bernstein3D, (2, 3, 4)),
+            (Bernstein4D, (2, 3, 4, 5)),
+        )
+
+        for polynomial_type, coefficient_shape in cases:
+            polynomial = polynomial_type(jnp.zeros((7,) + coefficient_shape))
+            order = polynomial.order
+
+            self.assertEqual(order.shape, (len(coefficient_shape),))
+            self.assertTrue(jnp.issubdtype(order.dtype, jnp.integer))
+            npt.assert_array_equal(order, jnp.asarray(coefficient_shape) - 1)
+            self.assertEqual(
+                polynomial.c.shape[-len(coefficient_shape) :],
+                tuple((order + 1).tolist()),
+            )
+
+    def test_evaluation_corners_and_jit(self):
+        for polynomial_type, shape, parameters in self.cases:
+            coefficients = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float32)
+            coefficients = coefficients.reshape(shape)
+            polynomial = polynomial_type(coefficients)
+            lower = polynomial(*(0.0,) * len(shape))
+            upper = polynomial(*(1.0,) * len(shape))
+
+            npt.assert_allclose(lower, coefficients[(0,) * len(shape)])
+            npt.assert_allclose(upper, coefficients[(-1,) * len(shape)])
+            npt.assert_allclose(
+                jax.jit(lambda *args: polynomial(*args))(*parameters),
+                polynomial(*parameters),
+            )
+
+    def test_arithmetic_and_axis_operations(self):
+        for polynomial_type, shape, parameters in self.cases:
+            coefficients = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float32)
+            polynomial = polynomial_type(coefficients.reshape(shape))
+            constant = polynomial_type(jnp.ones((1,) * len(shape), dtype=jnp.float32))
+
+            npt.assert_allclose(
+                (polynomial + constant)(*parameters), polynomial(*parameters) + 1
+            )
+            npt.assert_allclose(
+                (polynomial - constant)(*parameters), polynomial(*parameters) - 1
+            )
+            npt.assert_allclose(
+                (polynomial * polynomial)(*parameters),
+                polynomial(*parameters) ** 2,
+                rtol=1e-5,
+            )
+
+            for axis in range(len(shape)):
+                self.assertEqual(polynomial.deriv(axis=axis).c.shape[axis], 1)
+                self.assertEqual(polynomial.int(axis=axis).c.shape[axis], 3)
+
+                left, right = polynomial.split(0.5, axis=axis)
+                split_parameters = list(parameters)
+                split_parameters[axis] = 1.0
+                npt.assert_allclose(
+                    left(*split_parameters),
+                    polynomial(*parameters[:axis], 0.5, *parameters[axis + 1 :]),
+                )
+                split_parameters[axis] = 0.0
+                npt.assert_allclose(
+                    right(*split_parameters),
+                    polynomial(*parameters[:axis], 0.5, *parameters[axis + 1 :]),
+                )
+
+    def test_batched_evaluation(self):
+        polynomial = Bernstein2D(
+            jnp.array(
+                [
+                    [[0.0, 1.0], [2.0, 3.0]],
+                    [[4.0, 5.0], [6.0, 7.0]],
+                ]
+            )
+        )
+        npt.assert_allclose(polynomial(0.25, 0.75), jnp.array([1.25, 5.25]))
+
+    def test_segment_matches_tensor_evaluation(self):
+        cases = (
+            (Bernstein2D, (3, 2), jnp.array([0.1, 0.2]), jnp.array([0.8, 0.9])),
+            (
+                Bernstein3D,
+                (2, 3, 2),
+                jnp.array([0.1, 0.2, 0.3]),
+                jnp.array([0.8, 0.7, 0.9]),
+            ),
+            (
+                Bernstein4D,
+                (2, 2, 3, 2),
+                jnp.array([0.1, 0.2, 0.3, 0.4]),
+                jnp.array([0.8, 0.7, 0.9, 0.6]),
+            ),
+        )
+        parameters = jnp.array([0.0, 0.25, 0.5, 0.75, 1.0])
+
+        for polynomial_type, shape, start, end in cases:
+            coefficients = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float32)
+            polynomial = polynomial_type(coefficients.reshape(shape))
+            restricted = polynomial.segment(start, end)
+            coordinates = start[None, :] + parameters[:, None] * (end - start)
+
+            npt.assert_allclose(
+                restricted(parameters),
+                polynomial(*(coordinates[:, axis] for axis in range(len(shape)))),
+                rtol=1e-5,
+            )
+            npt.assert_allclose(
+                jax.jit(lambda s, e, t: polynomial.segment(s, e)(t))(
+                    start, end, parameters
+                ),
+                restricted(parameters),
+                rtol=1e-5,
+            )
+
+    def test_segment_supports_degenerate_and_batched_endpoints(self):
+        polynomial = Bernstein2D(
+            jnp.array(
+                [
+                    [[0.0, 1.0], [2.0, 3.0]],
+                    [[4.0, 5.0], [6.0, 7.0]],
+                ]
+            )
+        )
+        start = jnp.array([[0.25, 0.75], [0.5, 0.25]])
+        end = jnp.array([[0.25, 0.75], [0.75, 0.5]])
+        parameters = jnp.array([0.0, 0.5, 1.0])
+        restricted = polynomial.segment(start, end)
+
+        coordinates = (
+            start[:, None, :] + parameters[None, :, None] * (end - start)[:, None, :]
+        )
+        expected = jnp.stack(
+            [
+                Bernstein2D(polynomial.c[index])(
+                    coordinates[index, :, 0], coordinates[index, :, 1]
+                )
+                for index in range(2)
+            ]
+        )
+        npt.assert_allclose(restricted(parameters), expected, rtol=1e-5)
+
+    def test_slice_and_integrate_out_reduce_dimensions(self):
+        cases = (
+            (Bernstein2D, Bernstein, (2, 3), (0.25, 0.75)),
+            (Bernstein3D, Bernstein2D, (2, 3, 2), (0.25, 0.5, 0.75)),
+            (Bernstein4D, Bernstein3D, (2, 2, 3, 2), (0.25, 0.5, 0.75, 0.125)),
+        )
+
+        for polynomial_type, reduced_type, shape, parameters in cases:
+            coefficients = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float32)
+            polynomial = polynomial_type(coefficients.reshape(shape))
+
+            for axis, value in enumerate(parameters):
+                sliced = polynomial.slice(value, axis=axis)
+                integrated = polynomial.integrate_out(axis=axis)
+                remaining_parameters = parameters[:axis] + parameters[axis + 1 :]
+                axis_index = polynomial.c.ndim - len(shape) + axis
+
+                self.assertIsInstance(sliced, reduced_type)
+                self.assertIsInstance(integrated, reduced_type)
+                self.assertEqual(
+                    sliced.c.shape,
+                    tuple(size for index, size in enumerate(shape) if index != axis),
+                )
+                npt.assert_allclose(
+                    sliced(*remaining_parameters), polynomial(*parameters)
+                )
+                npt.assert_allclose(
+                    integrated.c,
+                    jnp.sum(polynomial.c, axis=axis_index) / shape[axis],
+                )
+
+                antiderivative = polynomial.int(axis=axis)
+                lower_coordinates = list(remaining_parameters)
+                upper_coordinates = list(remaining_parameters)
+                lower_coordinates.insert(axis, 0.0)
+                upper_coordinates.insert(axis, 1.0)
+                npt.assert_allclose(
+                    integrated(*remaining_parameters),
+                    antiderivative(*upper_coordinates)
+                    - antiderivative(*lower_coordinates),
+                )
+                npt.assert_allclose(
+                    jax.jit(
+                        lambda fixed_value: polynomial.slice(fixed_value, axis=axis)(
+                            *remaining_parameters
+                        )
+                    )(value),
+                    polynomial(*parameters),
+                )
+
+    def test_slice_supports_batched_values_and_validates_axes(self):
+        polynomial = Bernstein2D(
+            jnp.array(
+                [
+                    [[0.0, 1.0], [2.0, 3.0]],
+                    [[4.0, 5.0], [6.0, 7.0]],
+                ]
+            )
+        )
+        values = jnp.array([0.25, 0.75])
+        sliced = polynomial.slice(values, axis=0)
+        expected = jnp.array(
+            [
+                Bernstein2D(polynomial.c[index])(values[index], 0.5)
+                for index in range(values.shape[0])
+            ]
+        )
+
+        npt.assert_allclose(sliced(0.5), expected)
+        with self.assertRaises(ValueError):
+            polynomial.slice(0.5, axis=2)
+        with self.assertRaises(ValueError):
+            polynomial.integrate_out(axis=-1)
+
+    def test_tensor_basis_elevation_and_calculus_coefficient_formulas(self):
+        cases = (
+            (Bernstein2D, (2, 3), (0.25, 0.75)),
+            (Bernstein3D, (2, 3, 2), (0.25, 0.5, 0.75)),
+            (Bernstein4D, (2, 2, 3, 2), (0.25, 0.5, 0.75, 0.125)),
+        )
+
+        for polynomial_type, shape, parameters in cases:
+            coefficients = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float32)
+            coefficients = coefficients.reshape(shape)
+            polynomial = polynomial_type(coefficients)
+            npt.assert_allclose(
+                polynomial(*parameters),
+                tensor_value_from_basis(coefficients, parameters),
+                rtol=1e-5,
+            )
+
+            for axis, axis_size in enumerate(shape):
+                moved = jnp.moveaxis(coefficients, axis, -1)
+                degree = axis_size - 1
+                elevated_moved = jnp.concatenate(
+                    [
+                        moved[..., :1],
+                        jnp.arange(1, axis_size, dtype=coefficients.dtype)
+                        / axis_size
+                        * moved[..., :-1]
+                        + (
+                            1.0
+                            - jnp.arange(1, axis_size, dtype=coefficients.dtype)
+                            / axis_size
+                        )
+                        * moved[..., 1:],
+                        moved[..., -1:],
+                    ],
+                    axis=-1,
+                )
+                elevated = polynomial._elevate_axis(coefficients, axis, degree + 1)
+                npt.assert_allclose(
+                    elevated,
+                    jnp.moveaxis(elevated_moved, -1, axis),
+                    rtol=1e-5,
+                )
+                npt.assert_allclose(
+                    polynomial_type(elevated)(*parameters),
+                    polynomial(*parameters),
+                    rtol=1e-5,
+                )
+
+                expected_derivative = degree * (moved[..., 1:] - moved[..., :-1])
+                npt.assert_allclose(
+                    polynomial.deriv(axis=axis).c,
+                    jnp.moveaxis(expected_derivative, -1, axis),
+                )
+
+                expected_integral = jnp.concatenate(
+                    [
+                        jnp.zeros(moved.shape[:-1] + (1,)),
+                        jnp.cumsum(moved, axis=-1) / axis_size,
+                    ],
+                    axis=-1,
+                )
+                npt.assert_allclose(
+                    polynomial.int(axis=axis).c,
+                    jnp.moveaxis(expected_integral, -1, axis),
+                )
+
+    def test_tensor_product_multi_index_coefficient_formula(self):
+        first_coefficients = jnp.arange(6, dtype=jnp.float32).reshape(2, 3)
+        second_coefficients = jnp.arange(6, 12, dtype=jnp.float32).reshape(3, 2)
+        first = Bernstein2D(first_coefficients)
+        second = Bernstein2D(second_coefficients)
+        expected = jnp.zeros((4, 4), dtype=jnp.float32)
+
+        for first_index in itertools.product(
+            *(range(size) for size in first_coefficients.shape)
+        ):
+            for second_index in itertools.product(
+                *(range(size) for size in second_coefficients.shape)
+            ):
+                output_index = tuple(i + j for i, j in zip(first_index, second_index))
+                scale = math.prod(
+                    math.comb(first_coefficients.shape[axis] - 1, first_index[axis])
+                    * math.comb(second_coefficients.shape[axis] - 1, second_index[axis])
+                    / math.comb(
+                        first_coefficients.shape[axis]
+                        + second_coefficients.shape[axis]
+                        - 2,
+                        output_index[axis],
+                    )
+                    for axis in range(2)
+                )
+                expected = expected.at[output_index].add(
+                    first_coefficients[first_index]
+                    * second_coefficients[second_index]
+                    * scale
+                )
+
+        product = first * second
+        npt.assert_allclose(product.c, expected, rtol=1e-5)
+        npt.assert_allclose(
+            product(0.25, 0.75),
+            first(0.25, 0.75) * second(0.25, 0.75),
+            rtol=1e-5,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
