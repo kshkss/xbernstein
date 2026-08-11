@@ -60,7 +60,7 @@ def _multi_indices(dimensions: int, limit: int, total: int):
     )
 
 
-def _interpolate(dimensions: int, degree: int, groups):
+def _validate_groups(dimensions: int, degree: int, groups):
     r = (degree + 1) // 2
     expected_groups = (r - 1) * dimensions + 1
     if len(groups) != expected_groups:
@@ -82,6 +82,13 @@ def _interpolate(dimensions: int, degree: int, groups):
             raise ValueError(
                 f"derivative group {total} must have shape {expected_shape}"
             )
+    return values, batch_shape
+
+
+def _interpolate(dimensions: int, degree: int, groups):
+    r = (degree + 1) // 2
+    expected_groups = (r - 1) * dimensions + 1
+    values, batch_shape = _validate_groups(dimensions, degree, groups)
 
     coefficients = jnp.zeros(batch_shape + (degree + 1,) * dimensions, values[0].dtype)
     scales = tuple(

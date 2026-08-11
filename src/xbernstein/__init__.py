@@ -9,6 +9,12 @@ from .rational_tensor_bernstein import (
     RationalBernstein4D,
     _minimize as _minimize_rational_tensor,
 )
+from .rational_hermite import (
+    rational_hermite_interpolate_1d,
+    rational_hermite_interpolate_2d,
+    rational_hermite_interpolate_3d,
+    rational_hermite_interpolate_4d,
+)
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -33,6 +39,10 @@ __all__ = [
     "RationalBernstein2D",
     "RationalBernstein3D",
     "RationalBernstein4D",
+    "rational_hermite_interpolate_1d",
+    "rational_hermite_interpolate_2d",
+    "rational_hermite_interpolate_3d",
+    "rational_hermite_interpolate_4d",
     "linear_interpolate_1d",
     "linear_interpolate_2d",
     "linear_interpolate_3d",
