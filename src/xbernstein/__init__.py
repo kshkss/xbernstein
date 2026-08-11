@@ -2,7 +2,23 @@ from .bernstein import Bernstein, _minimize
 from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
+from .simplex_bernstein import (
+    Bernstein2DS,
+    Bernstein3DS,
+    Bernstein4DS,
+    _minimize_2ds,
+    _minimize_3ds,
+    _minimize_4ds,
+)
 from .rational_bernstein import RationalBernstein, _minimize as _minimize_rational
+from .rational_simplex_bernstein import (
+    RationalBernstein2DS,
+    RationalBernstein3DS,
+    RationalBernstein4DS,
+    _minimize_rational_2ds,
+    _minimize_rational_3ds,
+    _minimize_rational_4ds,
+)
 from .rational_tensor_bernstein import (
     RationalBernstein2D,
     RationalBernstein3D,
@@ -35,10 +51,16 @@ __all__ = [
     "Bernstein2D",
     "Bernstein3D",
     "Bernstein4D",
+    "Bernstein2DS",
+    "Bernstein3DS",
+    "Bernstein4DS",
     "RationalBernstein",
     "RationalBernstein2D",
     "RationalBernstein3D",
     "RationalBernstein4D",
+    "RationalBernstein2DS",
+    "RationalBernstein3DS",
+    "RationalBernstein4DS",
     "rational_hermite_interpolate_1d",
     "rational_hermite_interpolate_2d",
     "rational_hermite_interpolate_3d",
@@ -88,7 +110,7 @@ class OptimizeResult(NamedTuple):
     """
 
     f: Float[jax.Array, "*batch"]  # 最小値
-    x: Float[jax.Array, "*batch"]  # 最小値を与えるx
+    x: Float[jax.Array, "..."]  # 最小値を与えるx
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -107,10 +129,16 @@ def minimize(
         | Bernstein2D
         | Bernstein3D
         | Bernstein4D
+        | Bernstein2DS
+        | Bernstein3DS
+        | Bernstein4DS
         | RationalBernstein
         | RationalBernstein2D
         | RationalBernstein3D
         | RationalBernstein4D
+        | RationalBernstein2DS
+        | RationalBernstein3DS
+        | RationalBernstein4DS
     ),
     max_steps: int = 200,
     eps: float = 1e-6,
@@ -164,6 +192,23 @@ def minimize(
         )
         return OptimizeResult(f=fs.reshape(shape), x=xs.reshape(shape))
 
+    rational_simplex_solvers = (
+        (RationalBernstein2DS, _minimize_rational_2ds, 2),
+        (RationalBernstein3DS, _minimize_rational_3ds, 3),
+        (RationalBernstein4DS, _minimize_rational_4ds, 4),
+    )
+    for rational_type, solver, dimensions in rational_simplex_solvers:
+        if isinstance(bpoly, rational_type):
+            shape = bpoly.shape
+            homogeneous = bpoly.h.reshape((-1,) + bpoly.h.shape[-2:])
+            fs, xs = jax.vmap(solver, in_axes=(0, None, None))(
+                homogeneous, max_steps, eps
+            )
+            return OptimizeResult(
+                f=fs.reshape(shape),
+                x=xs.reshape(shape + (dimensions + 1,)),
+            )
+
     rational_tensor_types = (
         RationalBernstein2D,
         RationalBernstein3D,
@@ -198,6 +243,23 @@ def minimize(
             )
             x_shape = shape if dimensions == 1 else shape + (dimensions,)
             return OptimizeResult(f=fs.reshape(shape), x=xs.reshape(x_shape))
+
+    simplex_solvers = (
+        (Bernstein2DS, _minimize_2ds, 2),
+        (Bernstein3DS, _minimize_3ds, 3),
+        (Bernstein4DS, _minimize_4ds, 4),
+    )
+    for polynomial_type, solver, dimensions in simplex_solvers:
+        if isinstance(bpoly, polynomial_type):
+            shape = bpoly.shape
+            coefficients = bpoly.c.reshape((-1, bpoly.c.shape[-1]))
+            fs, xs = jax.vmap(solver, in_axes=(0, None, None))(
+                coefficients, max_steps, eps
+            )
+            return OptimizeResult(
+                f=fs.reshape(shape),
+                x=xs.reshape(shape + (dimensions + 1,)),
+            )
     raise TypeError(
         f"minimize requires a Bernstein polynomial, got {type(bpoly).__name__}"
     )
@@ -209,10 +271,16 @@ def maximize(
         | Bernstein2D
         | Bernstein3D
         | Bernstein4D
+        | Bernstein2DS
+        | Bernstein3DS
+        | Bernstein4DS
         | RationalBernstein
         | RationalBernstein2D
         | RationalBernstein3D
         | RationalBernstein4D
+        | RationalBernstein2DS
+        | RationalBernstein3DS
+        | RationalBernstein4DS
     ),
     max_steps: int = 200,
     eps: float = 1e-6,
@@ -230,13 +298,17 @@ def maximize(
     behavior as :func:`minimize`. For a one-dimensional polynomial or rational
     function, ``f`` and ``x`` have shape ``(*batch,)``; for a $d$-dimensional
     tensor polynomial, they have shapes ``(*batch,)`` and ``(*batch, d)``,
-    respectively.
+    respectively. A $d$-simplex result stores all barycentric coordinates, so
+    its location has shape ``(*batch, d + 1)``.
     """
     rational_types = (
         RationalBernstein,
         RationalBernstein2D,
         RationalBernstein3D,
         RationalBernstein4D,
+        RationalBernstein2DS,
+        RationalBernstein3DS,
+        RationalBernstein4DS,
     )
     if isinstance(bpoly, RationalBernstein):
         negated = RationalBernstein(-bpoly.values, bpoly.weights)
