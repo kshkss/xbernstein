@@ -2,6 +2,7 @@ from .bernstein import Bernstein, _minimize
 from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
+from .rational_bernstein import RationalBernstein, _minimize as _minimize_rational
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -22,6 +23,7 @@ __all__ = [
     "Bernstein2D",
     "Bernstein3D",
     "Bernstein4D",
+    "RationalBernstein",
     "linear_interpolate_1d",
     "linear_interpolate_2d",
     "linear_interpolate_3d",
@@ -81,7 +83,7 @@ class OptimizeResult(NamedTuple):
 
 
 def minimize(
-    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D,
+    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D | RationalBernstein,
     max_steps: int = 200,
     eps: float = 1e-6,
 ) -> OptimizeResult:
@@ -121,10 +123,19 @@ def minimize(
     (2, 3)
     ```
 
-    ``minimize`` accepts one Bernstein object, so it does not broadcast
-    separate polynomial inputs. The leading shape is taken entirely from that
-    object's coefficient array.
+    ``minimize`` accepts one polynomial object, so it does not broadcast
+    separate inputs. The leading shape is taken entirely from that object's
+    coefficient array. Positive-weight :class:`RationalBernstein` functions
+    use the convex hull of their dehomogenized control values for bounds.
     """
+    if isinstance(bpoly, RationalBernstein):
+        shape = bpoly.shape
+        homogeneous = bpoly.h.reshape((-1,) + bpoly.h.shape[-2:])
+        fs, xs = jax.vmap(_minimize_rational, in_axes=(0, None, None))(
+            homogeneous, max_steps, eps
+        )
+        return OptimizeResult(f=fs.reshape(shape), x=xs.reshape(shape))
+
     solvers = (
         (Bernstein, _minimize, 1),
         (Bernstein2D, _minimize_2d, 2),
@@ -147,11 +158,11 @@ def minimize(
 
 
 def maximize(
-    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D,
+    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D | RationalBernstein,
     max_steps: int = 200,
     eps: float = 1e-6,
 ) -> OptimizeResult:
-    r"""Approximate the global maximum of a 1D--4D Bernstein polynomial.
+    r"""Approximate the global maximum of a supported Bernstein representation.
 
     The implementation uses
 
@@ -161,9 +172,14 @@ def maximize(
     $$
 
     It therefore has the same branch-and-bound convergence and batching
-    behavior as :func:`minimize`. For a one-dimensional polynomial, ``f`` and
-    ``x`` have shape ``(*batch,)``; for a $d$-dimensional tensor polynomial,
-    they have shapes ``(*batch,)`` and ``(*batch, d)``, respectively.
+    behavior as :func:`minimize`. For a one-dimensional polynomial or rational
+    function, ``f`` and ``x`` have shape ``(*batch,)``; for a $d$-dimensional
+    tensor polynomial, they have shapes ``(*batch,)`` and ``(*batch, d)``,
+    respectively.
     """
-    result = minimize(type(bpoly)(-bpoly.c), max_steps=max_steps, eps=eps)
+    if isinstance(bpoly, RationalBernstein):
+        negated = RationalBernstein(-bpoly.values, bpoly.weights)
+    else:
+        negated = type(bpoly)(-bpoly.c)
+    result = minimize(negated, max_steps=max_steps, eps=eps)
     return OptimizeResult(f=-result.f, x=result.x)
