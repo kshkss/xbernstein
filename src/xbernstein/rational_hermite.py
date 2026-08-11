@@ -60,9 +60,7 @@ def _unpack_derivatives(dimensions: int, values):
 def _selected_indices(dimensions: int):
     square_free = tuple(itertools.product((0, 1), repeat=dimensions))
     doubled = tuple(
-        alpha
-        for alpha in itertools.product((0, 2), repeat=dimensions)
-        if any(alpha)
+        alpha for alpha in itertools.product((0, 2), repeat=dimensions) if any(alpha)
     )
     return square_free + doubled
 
@@ -98,10 +96,7 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
         index for index in range(coefficient_count) if index not in value_jet_indices
     )
     jet_matrix = jnp.stack(
-        [
-            _derivative_row(beta, vertex, dtype)
-            for vertex, beta in jet_keys
-        ]
+        [_derivative_row(beta, vertex, dtype) for vertex, beta in jet_keys]
     )
     coefficient_from_jet = jnp.linalg.inv(jet_matrix)
     corner_coefficients = _corner_indices(dimensions)
@@ -119,16 +114,12 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
             noncorner_sum_row[jnp.asarray(derivative_jet_indices)],
         ]
     )
-    normalization_rhs = 1.0 - jnp.sum(
-        noncorner_sum_row[jnp.asarray(value_jet_indices)]
-    )
+    normalization_rhs = 1.0 - jnp.sum(noncorner_sum_row[jnp.asarray(value_jet_indices)])
     unknown_count = coefficient_count + len(derivative_jet_indices)
     rows = []
     right_hand_sides = []
     derivative_rows = {
-        (alpha, vertex): (
-            _derivative_row(alpha, vertex, dtype) @ coefficient_from_jet
-        )
+        (alpha, vertex): (_derivative_row(alpha, vertex, dtype) @ coefficient_from_jet)
         for alpha in itertools.product(range(3), repeat=dimensions)
         for vertex in vertices
     }
@@ -138,9 +129,7 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
         for alpha in _selected_indices(dimensions):
             denominator_row = jnp.zeros(coefficient_count, dtype=dtype)
             for gamma in _subindices(alpha):
-                remaining = tuple(
-                    upper - lower for upper, lower in zip(alpha, gamma)
-                )
+                remaining = tuple(upper - lower for upper, lower in zip(alpha, gamma))
                 denominator_row = denominator_row - (
                     _multi_binomial(alpha, gamma)
                     * derivatives[gamma][vertex_index][..., None]
@@ -180,10 +169,7 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
 
 def _matrix_rank(matrix: jax.Array) -> jax.Array:
     singular_values = jnp.linalg.svd(matrix, compute_uv=False)
-    tolerance = (
-        jnp.finfo(matrix.dtype).eps
-        * jnp.maximum(singular_values[0], 1.0)
-    )
+    tolerance = jnp.finfo(matrix.dtype).eps * jnp.maximum(singular_values[0], 1.0)
     return jnp.sum(singular_values > tolerance)
 
 
@@ -210,9 +196,7 @@ def _solve_one(
         jnp.max(jnp.abs(normalization_row)),
         jnp.maximum(jnp.abs(normalization_rhs), 1.0),
     )
-    scaled_normalization = (
-        normalization_row / normalization_scale / column_scale
-    )
+    scaled_normalization = normalization_row / normalization_scale / column_scale
     augmented_matrix = jnp.concatenate(
         [scaled_matrix, scaled_normalization[None, :]], axis=0
     )
@@ -225,9 +209,7 @@ def _solve_one(
         return jnp.linalg.solve(scaled_matrix, normalized_rhs)
 
     def solve_augmented(_):
-        return jnp.linalg.lstsq(
-            augmented_matrix, augmented_rhs, rcond=None
-        )[0]
+        return jnp.linalg.lstsq(augmented_matrix, augmented_rhs, rcond=None)[0]
 
     scaled_solution = jax.lax.cond(
         rank == unknown_count,
@@ -237,9 +219,7 @@ def _solve_one(
     )
     solution = scaled_solution / column_scale
     residual = normalized_matrix @ solution - normalized_rhs
-    residual_tolerance = (
-        10.0 * jnp.sqrt(jnp.finfo(matrix.dtype).eps)
-    )
+    residual_tolerance = 10.0 * jnp.sqrt(jnp.finfo(matrix.dtype).eps)
     invalid = (
         ((rank < unknown_count) & (augmented_rank < unknown_count))
         | (jnp.max(jnp.abs(residual)) > residual_tolerance)
@@ -282,12 +262,8 @@ def _interpolate(dimensions: int, groups):
     denominator_jets = denominator_jets.at[..., derivative_jet_indices].set(
         solutions[..., coefficient_count:]
     )
-    numerator = jnp.einsum(
-        "ij,...j->...i", coefficient_from_jet, numerator_jets
-    )
-    denominator = jnp.einsum(
-        "ij,...j->...i", coefficient_from_jet, denominator_jets
-    )
+    numerator = jnp.einsum("ij,...j->...i", coefficient_from_jet, numerator_jets)
+    denominator = jnp.einsum("ij,...j->...i", coefficient_from_jet, denominator_jets)
     denominator = eqx.error_if(
         denominator,
         jnp.any(denominator <= 0.0),

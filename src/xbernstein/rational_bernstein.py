@@ -466,15 +466,11 @@ def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
         v = v_buffer[index]
         current = h_buffer[index]
         midpoint = 0.5 * (u + v)
-        left, right = _split_homogeneous(
-            current, jnp.array(0.5, dtype=current.dtype)
-        )
+        left, right = _split_homogeneous(current, jnp.array(0.5, dtype=current.dtype))
         left_values = left[0] / left[1]
         right_values = right[0] / right[1]
 
-        samples = jnp.array(
-            [left_values[0], left_values[-1], right_values[-1]]
-        )
+        samples = jnp.array([left_values[0], left_values[-1], right_values[-1]])
         sample_points = jnp.array([u, midpoint, v])
         sample_index = jnp.argmin(samples)
         new_upper = jnp.minimum(incumbent, samples[sample_index])
@@ -528,9 +524,9 @@ def _minimize_jvp(primals, tangents):
 
     tangent_first = jax.jvp(first_derivative, (h,), (tangent_h,))[1]
     second = jax.grad(
-        lambda parameter: jax.grad(
-            lambda inner: _evaluate_homogeneous(h, inner)
-        )(parameter)
+        lambda parameter: jax.grad(lambda inner: _evaluate_homogeneous(h, inner))(
+            parameter
+        )
     )(x_star)
     tangent_x = jax.lax.cond(
         jnp.equal(x_star, 0.0) | jnp.equal(x_star, 1.0),

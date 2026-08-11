@@ -65,9 +65,7 @@ def _endpoint_data(values, weights):
                     value -= (
                         coefficient
                         * jets[gamma][vertex]
-                        * _polynomial_vertex_jet(
-                            weights, denominator_alpha, vertex
-                        )
+                        * _polynomial_vertex_jet(weights, denominator_alpha, vertex)
                     )
                 vertex_jets[vertex] = value / _polynomial_vertex_jet(
                     weights, (0,) * dimensions, vertex
@@ -192,9 +190,9 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
         d1 = jnp.ones(2)
         d2 = jnp.zeros(2)
         weights = jax.jit(
-            lambda value, first, second: rational_hermite_interpolate_1d(
-                value, first, second
-            ).weights
+            lambda value, first, second: (
+                rational_hermite_interpolate_1d(value, first, second).weights
+            )
         )(f, d1, d2)
         gradient = jax.grad(
             lambda value: rational_hermite_interpolate_1d(value, d1, d2)(0.4)
@@ -226,9 +224,7 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
             )
 
     def test_rejects_invalid_group_shape(self):
-        with self.assertRaisesRegex(
-            ValueError, "derivative group 1 must have shape"
-        ):
+        with self.assertRaisesRegex(ValueError, "derivative group 1 must have shape"):
             rational_hermite_interpolate_2d(
                 jnp.zeros((2, 2)),
                 jnp.zeros((2, 2, 3)),

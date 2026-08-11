@@ -344,8 +344,7 @@ class _RationalTensorBernstein(eqx.Module):
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
-            self.numerator * other.denominator
-            + other.numerator * self.denominator
+            self.numerator * other.denominator + other.numerator * self.denominator
         )
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
@@ -365,8 +364,7 @@ class _RationalTensorBernstein(eqx.Module):
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
-            self.numerator * other.denominator
-            - other.numerator * self.denominator
+            self.numerator * other.denominator - other.numerator * self.denominator
         )
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
@@ -430,18 +428,15 @@ class _RationalTensorBernstein(eqx.Module):
             raise ValueError("derivative order must be non-negative")
         result = self
         for _ in range(m):
-            numerator = (
-                result.numerator.deriv(axis=axis) * result.denominator
-                - result.numerator * result.denominator.deriv(axis=axis)
+            numerator = result.numerator.deriv(
+                axis=axis
+            ) * result.denominator - result.numerator * result.denominator.deriv(
+                axis=axis
             )
             denominator = result.denominator * result.denominator
             target_degrees = tuple(int(value) for value in denominator.order)
-            numerator_coefficients = numerator._elevate(
-                numerator.c, target_degrees
-            )
-            result = type(self)._from_homogeneous(
-                numerator_coefficients, denominator.c
-            )
+            numerator_coefficients = numerator._elevate(numerator.c, target_degrees)
+            result = type(self)._from_homogeneous(numerator_coefficients, denominator.c)
         return result
 
     def split(self, t: jax.Array | float = jnp.array(0.5), axis: int = 0):
@@ -489,12 +484,8 @@ class _RationalTensorBernstein(eqx.Module):
         numerator_left, numerator_right = self.numerator.split(t=t, axis=axis)
         denominator_left, denominator_right = self.denominator.split(t=t, axis=axis)
         return (
-            type(self)._from_homogeneous(
-                numerator_left.c, denominator_left.c
-            ),
-            type(self)._from_homogeneous(
-                numerator_right.c, denominator_right.c
-            ),
+            type(self)._from_homogeneous(numerator_left.c, denominator_left.c),
+            type(self)._from_homogeneous(numerator_right.c, denominator_right.c),
         )
 
     def _lower_dimension(self, numerator: jax.Array, denominator: jax.Array):
@@ -698,9 +689,7 @@ def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
     dimensions = h.ndim - 1
     capacity = max_steps + 1
     corners = jnp.asarray(list(itertools.product((0, 1), repeat=dimensions)))
-    samples = jnp.concatenate(
-        [corners, jnp.full((1, dimensions), 0.5, dtype=h.dtype)]
-    )
+    samples = jnp.concatenate([corners, jnp.full((1, dimensions), 0.5, dtype=h.dtype)])
     initial_values = jax.vmap(lambda point: _evaluate_rational_tensor(h, point))(
         samples
     )
@@ -742,16 +731,10 @@ def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
         point = jnp.where(replace, candidate_points[candidate_index], point)
         next_index = step + 1
         lower = (
-            lower.at[index]
-            .set(lo)
-            .at[next_index]
-            .set(lo.at[axis].set(midpoint[axis]))
+            lower.at[index].set(lo).at[next_index].set(lo.at[axis].set(midpoint[axis]))
         )
         upper = (
-            upper.at[index]
-            .set(hi.at[axis].set(midpoint[axis]))
-            .at[next_index]
-            .set(hi)
+            upper.at[index].set(hi.at[axis].set(midpoint[axis])).at[next_index].set(hi)
         )
         control = control.at[index].set(left).at[next_index].set(right)
         left_values = left[0] / left[1]
@@ -782,15 +765,13 @@ def _minimize_jvp(primals, tangents):
 
     def gradient(homogeneous):
         return jax.grad(
-            lambda parameters: _evaluate_rational_tensor(
-                homogeneous, parameters
-            )
+            lambda parameters: _evaluate_rational_tensor(homogeneous, parameters)
         )(point)
 
     tangent_gradient = jax.jvp(gradient, (h,), (tangent_h,))[1]
-    hessian = jax.hessian(
-        lambda parameters: _evaluate_rational_tensor(h, parameters)
-    )(point)
+    hessian = jax.hessian(lambda parameters: _evaluate_rational_tensor(h, parameters))(
+        point
+    )
     tangent_point = jax.lax.cond(
         jnp.any((point == 0.0) | (point == 1.0)),
         lambda _: jnp.zeros_like(point),

@@ -54,9 +54,7 @@ def vertex_values(polynomial, dimensions: int):
             values.append(polynomial(vertex[0]))
         else:
             values.append(polynomial(*vertex))
-    return jnp.stack(values, axis=-1).reshape(
-        polynomial.shape + (2,) * dimensions
-    )
+    return jnp.stack(values, axis=-1).reshape(polynomial.shape + (2,) * dimensions)
 
 
 def endpoint_groups(polynomial, dimensions: int, degree: int):

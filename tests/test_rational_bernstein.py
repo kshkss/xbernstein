@@ -72,9 +72,7 @@ class RationalBernsteinTest(unittest.TestCase):
         npt.assert_allclose(curve(0.0), values[0])
         npt.assert_allclose(curve(1.0), values[-1])
 
-        batched = RationalBernstein(
-            jnp.stack((values, values + 1.0)), weights
-        )
+        batched = RationalBernstein(jnp.stack((values, values + 1.0)), weights)
         self.assertEqual(batched(jnp.zeros((4, 1))).shape, (2, 4, 1))
 
     def test_weight_scaling_preserves_function(self):
@@ -152,17 +150,11 @@ class RationalBernsteinTest(unittest.TestCase):
             for index in range(2)
         ]
         expected_left = jnp.stack(
-            [
-                item(split_at[index] * parameters)
-                for index, item in enumerate(curves)
-            ]
+            [item(split_at[index] * parameters) for index, item in enumerate(curves)]
         )
         expected_right = jnp.stack(
             [
-                item(
-                    split_at[index]
-                    + (1.0 - split_at[index]) * parameters
-                )
+                item(split_at[index] + (1.0 - split_at[index]) * parameters)
                 for index, item in enumerate(curves)
             ]
         )
@@ -268,43 +260,32 @@ class RationalTensorBernsteinTest(unittest.TestCase):
         shape = (2,) * dimensions
         indices = jnp.indices(shape)
         values = jnp.sum(indices, axis=0, dtype=jnp.float32)
-        weights = 1.0 + jnp.arange(
-            math.prod(shape), dtype=jnp.float32
-        ).reshape(shape)
+        weights = 1.0 + jnp.arange(math.prod(shape), dtype=jnp.float32).reshape(shape)
         return values, weights
 
     def test_constructor_properties_evaluation_and_batching(self):
         for rational_type, dimensions, _ in self.cases:
             with self.subTest(rational_type=rational_type.__name__):
                 values, weights = self.controls(dimensions)
-                batched_values = jnp.stack((values, values + 1.0))[
-                    :, None, ...
-                ]
+                batched_values = jnp.stack((values, values + 1.0))[:, None, ...]
                 batched_weights = jnp.stack((weights, 2.0 * weights))[None, ...]
                 function = rational_type(batched_values, batched_weights)
                 parameters = (0.2,) * dimensions
 
                 self.assertEqual(function.shape, (2, 2))
-                self.assertEqual(
-                    function.h.shape, (2, 2, 2) + (2,) * dimensions
-                )
+                self.assertEqual(function.h.shape, (2, 2, 2) + (2,) * dimensions)
                 npt.assert_array_equal(function.order, jnp.ones(dimensions))
                 npt.assert_allclose(
                     function.values,
-                    jnp.broadcast_to(
-                        batched_values, (2, 2) + (2,) * dimensions
-                    ),
+                    jnp.broadcast_to(batched_values, (2, 2) + (2,) * dimensions),
                 )
                 npt.assert_allclose(
                     function.weights,
-                    jnp.broadcast_to(
-                        batched_weights, (2, 2) + (2,) * dimensions
-                    ),
+                    jnp.broadcast_to(batched_weights, (2, 2) + (2,) * dimensions),
                 )
                 npt.assert_allclose(
                     function(*parameters),
-                    function.numerator(*parameters)
-                    / function.denominator(*parameters),
+                    function.numerator(*parameters) / function.denominator(*parameters),
                 )
                 point_arrays = (jnp.zeros((3, 1)), jnp.zeros((1, 4)))
                 evaluation_parameters = point_arrays + (0.25,) * (dimensions - 2)
@@ -335,14 +316,12 @@ class RationalTensorBernsteinTest(unittest.TestCase):
                     npt.assert_allclose(
                         actual(*parameters), expected, rtol=2e-5, atol=1e-6
                     )
-                    npt.assert_array_equal(
-                        actual.order, left.order + right.order
-                    )
+                    npt.assert_array_equal(actual.order, left.order + right.order)
 
                 point = jnp.full(dimensions, 0.3)
-                expected_gradient = jax.grad(
-                    lambda coordinates: left(*coordinates)
-                )(point)
+                expected_gradient = jax.grad(lambda coordinates: left(*coordinates))(
+                    point
+                )
                 for axis in (0, 1):
                     npt.assert_allclose(
                         left.deriv(axis=axis)(*point),
@@ -407,9 +386,7 @@ class RationalTensorBernsteinTest(unittest.TestCase):
                 values, weights = self.controls(dimensions)
 
                 def evaluate(control_values):
-                    return rational_type(control_values, weights)(
-                        *(0.3,) * dimensions
-                    )
+                    return rational_type(control_values, weights)(*(0.3,) * dimensions)
 
                 eager = evaluate(values)
                 npt.assert_allclose(
@@ -440,15 +417,11 @@ class RationalTensorBernsteinTest(unittest.TestCase):
                 npt.assert_allclose(maximum.f, float(dimensions), atol=1e-6)
                 npt.assert_allclose(maximum.x, jnp.ones(dimensions), atol=1e-6)
 
-                batched = rational_type(
-                    jnp.stack((values, values + 1.0)), weights
-                )
+                batched = rational_type(jnp.stack((values, values + 1.0)), weights)
                 batched_minimum = minimize(batched, max_steps=30, eps=1e-7)
                 self.assertEqual(batched_minimum.f.shape, (2,))
                 self.assertEqual(batched_minimum.x.shape, (2, dimensions))
-                npt.assert_allclose(
-                    batched_minimum.f, jnp.array([0.0, 1.0]), atol=1e-6
-                )
+                npt.assert_allclose(batched_minimum.f, jnp.array([0.0, 1.0]), atol=1e-6)
 
     def test_minimize_supports_jvp(self):
         x_coefficients = jnp.array([0.09, -0.21, 0.49])

@@ -174,9 +174,9 @@ def minimize(
             shape = bpoly.shape
             homogeneous_shape = bpoly.h.shape[-(dimensions + 1) :]
             homogeneous = bpoly.h.reshape((-1,) + homogeneous_shape)
-            fs, xs = jax.vmap(
-                _minimize_rational_tensor, in_axes=(0, None, None)
-            )(homogeneous, max_steps, eps)
+            fs, xs = jax.vmap(_minimize_rational_tensor, in_axes=(0, None, None))(
+                homogeneous, max_steps, eps
+            )
             return OptimizeResult(
                 f=fs.reshape(shape),
                 x=xs.reshape(shape + (dimensions,)),
