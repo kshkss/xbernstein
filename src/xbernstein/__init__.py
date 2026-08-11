@@ -3,6 +3,12 @@ from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 from .rational_bernstein import RationalBernstein, _minimize as _minimize_rational
+from .rational_tensor_bernstein import (
+    RationalBernstein2D,
+    RationalBernstein3D,
+    RationalBernstein4D,
+    _minimize as _minimize_rational_tensor,
+)
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -24,6 +30,9 @@ __all__ = [
     "Bernstein3D",
     "Bernstein4D",
     "RationalBernstein",
+    "RationalBernstein2D",
+    "RationalBernstein3D",
+    "RationalBernstein4D",
     "linear_interpolate_1d",
     "linear_interpolate_2d",
     "linear_interpolate_3d",
@@ -83,7 +92,16 @@ class OptimizeResult(NamedTuple):
 
 
 def minimize(
-    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D | RationalBernstein,
+    bpoly: (
+        Bernstein
+        | Bernstein2D
+        | Bernstein3D
+        | Bernstein4D
+        | RationalBernstein
+        | RationalBernstein2D
+        | RationalBernstein3D
+        | RationalBernstein4D
+    ),
     max_steps: int = 200,
     eps: float = 1e-6,
 ) -> OptimizeResult:
@@ -136,6 +154,24 @@ def minimize(
         )
         return OptimizeResult(f=fs.reshape(shape), x=xs.reshape(shape))
 
+    rational_tensor_types = (
+        RationalBernstein2D,
+        RationalBernstein3D,
+        RationalBernstein4D,
+    )
+    for dimensions, rational_type in enumerate(rational_tensor_types, start=2):
+        if isinstance(bpoly, rational_type):
+            shape = bpoly.shape
+            homogeneous_shape = bpoly.h.shape[-(dimensions + 1) :]
+            homogeneous = bpoly.h.reshape((-1,) + homogeneous_shape)
+            fs, xs = jax.vmap(
+                _minimize_rational_tensor, in_axes=(0, None, None)
+            )(homogeneous, max_steps, eps)
+            return OptimizeResult(
+                f=fs.reshape(shape),
+                x=xs.reshape(shape + (dimensions,)),
+            )
+
     solvers = (
         (Bernstein, _minimize, 1),
         (Bernstein2D, _minimize_2d, 2),
@@ -158,7 +194,16 @@ def minimize(
 
 
 def maximize(
-    bpoly: Bernstein | Bernstein2D | Bernstein3D | Bernstein4D | RationalBernstein,
+    bpoly: (
+        Bernstein
+        | Bernstein2D
+        | Bernstein3D
+        | Bernstein4D
+        | RationalBernstein
+        | RationalBernstein2D
+        | RationalBernstein3D
+        | RationalBernstein4D
+    ),
     max_steps: int = 200,
     eps: float = 1e-6,
 ) -> OptimizeResult:
@@ -177,8 +222,16 @@ def maximize(
     tensor polynomial, they have shapes ``(*batch,)`` and ``(*batch, d)``,
     respectively.
     """
+    rational_types = (
+        RationalBernstein,
+        RationalBernstein2D,
+        RationalBernstein3D,
+        RationalBernstein4D,
+    )
     if isinstance(bpoly, RationalBernstein):
         negated = RationalBernstein(-bpoly.values, bpoly.weights)
+    elif isinstance(bpoly, rational_types[1:]):
+        negated = type(bpoly)(-bpoly.values, bpoly.weights)
     else:
         negated = type(bpoly)(-bpoly.c)
     result = minimize(negated, max_steps=max_steps, eps=eps)
