@@ -132,11 +132,25 @@ def _interpolate(dimensions: int, degree: int, groups):
 def linear_interpolate_1d(
     f: Float[jax.Array, "*batch 2"],
 ) -> Float[Bernstein, "*batch"]:
-    """Return :class:`Bernstein` of degree 1 from ``f[..., v_x]``.
+    r"""Interpolate two endpoint values by the unique degree-1 Bernstein polynomial.
 
-    ``f`` has shape ``(*batch, 2)``.  ``f[..., 0]`` is $f(0)$ and
-    ``f[..., 1]`` is $f(1)$.  The returned controls have the same shape, with
-    ``c[..., i_x]`` corresponding to the same $x$ order as ``v_x``.
+    The result is the affine function
+
+    $$
+    p(x)=\sum_{i=0}^{1}c_i B_i^1(x)
+    $$
+
+    satisfying
+
+    $$
+    p(v)=f(v),\qquad v\in\{0,1\}.
+    $$
+
+    Thus all supplied data, namely the two endpoint values, are reproduced
+    exactly. ``f`` has shape ``(*batch,2)``:
+    ``f[...,0]=f(0)`` and ``f[...,1]=f(1)``. The result has
+    ``bpoly.order == 1`` and ``bpoly.c[...,i_x]`` follows the same $x$ order
+    as the vertex axis. Leading batch axes are preserved.
     """
     return _interpolate(1, 1, (f,))
 
@@ -145,11 +159,27 @@ def linear_interpolate_1d(
 def linear_interpolate_2d(
     f: Float[jax.Array, "*batch 2 2"],
 ) -> Float[Bernstein2D, "*batch"]:
-    """Return :class:`Bernstein2D` of degree $(1,1)$ from ``f[..., v_x, v_y]``.
+    r"""Interpolate vertex values by the unique bilinear Bernstein polynomial.
 
-    ``f`` has shape ``(*batch, 2, 2)``.  Its final axes are vertices in
-    ``x, y`` order: ``f[..., vx, vy] = f(vx, vy)``.  Output
-    ``c[..., ix, iy]`` uses the identical ``x, y`` axis order.
+    The result is
+
+    $$
+    p(x,y)=\sum_{i=0}^{1}\sum_{j=0}^{1}
+    c_{ij}B_i^1(x)B_j^1(y),
+    $$
+
+    the unique polynomial of degree at most one in each coordinate satisfying
+
+    $$
+    p(v_x,v_y)=f(v_x,v_y),
+    \qquad (v_x,v_y)\in\{0,1\}^2.
+    $$
+
+    Hence all four supplied vertex values are reproduced exactly. ``f`` has
+    shape ``(*batch,2,2)`` and
+    ``f[...,v_x,v_y]=f(v_x,v_y)``. The result has
+    ``bpoly.order == [1,1]``; ``bpoly.c[...,i_x,i_y]`` uses the same $x,y$
+    axis order. Leading batch axes are preserved.
     """
     return _interpolate(2, 1, (f,))
 
@@ -158,10 +188,30 @@ def linear_interpolate_2d(
 def linear_interpolate_3d(
     f: Float[jax.Array, "*batch 2 2 2"],
 ) -> Float[Bernstein3D, "*batch"]:
-    """Return :class:`Bernstein3D` of degree $(1,1,1)$.
+    r"""Interpolate vertex values by the unique trilinear Bernstein polynomial.
 
-    ``f[..., vx, vy, vz]`` has shape ``(*batch, 2, 2, 2)`` and stores
-    $f(v_x,v_y,v_z)$.  Returned ``c[..., ix, iy, iz]`` preserves ``x,y,z``.
+    Writing $\mathbf{x}=(x,y,z)$, the result is
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf{i}\in\{0,1\}^3}
+    c_{\mathbf{i}}\prod_{a=1}^{3}B_{i_a}^1(x_a)
+    \in\mathcal Q_1,
+    $$
+
+    where $\mathcal Q_1$ contains polynomials of degree at most one in each
+    coordinate. It is uniquely determined by
+
+    $$
+    p(\mathbf v)=f(\mathbf v),
+    \qquad \mathbf v\in\{0,1\}^3.
+    $$
+
+    Thus all eight supplied vertex values are reproduced exactly.
+    ``f[...,v_x,v_y,v_z]`` has shape ``(*batch,2,2,2)`` and stores
+    $f(v_x,v_y,v_z)$. The result has ``bpoly.order == [1,1,1]``;
+    ``bpoly.c[...,i_x,i_y,i_z]`` preserves the $x,y,z$ order and all leading
+    batch axes.
     """
     return _interpolate(3, 1, (f,))
 
@@ -170,10 +220,30 @@ def linear_interpolate_3d(
 def linear_interpolate_4d(
     f: Float[jax.Array, "*batch 2 2 2 2"],
 ) -> Float[Bernstein4D, "*batch"]:
-    """Return :class:`Bernstein4D` of degree $(1,1,1,1)$.
+    r"""Interpolate vertex values by the unique 4D multilinear Bernstein polynomial.
 
-    ``f[..., vx, vy, vz, vw]`` has shape ``(*batch, 2, 2, 2, 2)``.  Returned
-    ``c[..., ix, iy, iz, iw]`` preserves the exact ``x,y,z,w`` order.
+    For $\mathbf{x}=(x,y,z,w)$, the result is
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf{i}\in\{0,1\}^4}
+    c_{\mathbf{i}}\prod_{a=1}^{4}B_{i_a}^1(x_a)
+    \in\mathcal Q_1,
+    $$
+
+    where the degree is at most one in each coordinate, not total degree one.
+    The $16$ conditions
+
+    $$
+    p(\mathbf v)=f(\mathbf v),
+    \qquad \mathbf v\in\{0,1\}^4,
+    $$
+
+    uniquely determine $p$ and reproduce every supplied vertex value.
+    ``f[...,v_x,v_y,v_z,v_w]`` has shape ``(*batch,2,2,2,2)``. The result
+    has ``bpoly.order == [1,1,1,1]``;
+    ``bpoly.c[...,i_x,i_y,i_z,i_w]`` preserves the $x,y,z,w$ order and all
+    leading batch axes.
     """
     return _interpolate(4, 1, (f,))
 
@@ -182,11 +252,26 @@ def linear_interpolate_4d(
 def hermite_interpolate_1d(
     f: Float[jax.Array, "*batch 2"], d1: Float[jax.Array, "*batch 2"]
 ) -> Float[Bernstein, "*batch"]:
-    """Return degree-3 1D controls from values and first endpoint derivatives.
+    r"""Interpolate endpoint values and slopes by the unique cubic polynomial.
 
-    ``f[..., vx]`` and ``d1[..., vx]`` both have shape ``(*batch, 2)``;
-    they store $f(v_x)$ and $f_x(v_x)$.  Output ``c[..., ix]`` is in $x$
-    order.
+    The result
+
+    $$
+    p(x)=\sum_{i=0}^{3}c_iB_i^3(x)
+    $$
+
+    is uniquely determined by the Hermite conditions
+
+    $$
+    p^{(k)}(v)=f^{(k)}(v),
+    \qquad v\in\{0,1\},\quad k\in\{0,1\}.
+    $$
+
+    Hence both the value and first derivative are reproduced at both
+    endpoints. ``f[...,v_x]`` and ``d1[...,v_x]`` have shape
+    ``(*batch,2)`` and store $f(v_x)$ and $f_x(v_x)$. The result has
+    ``bpoly.order == 3``; ``bpoly.c[...,i_x]`` is in $x$ order and leading
+    batch axes are preserved.
     """
     return _interpolate(1, 3, (f, d1))
 
@@ -197,99 +282,253 @@ def hermite_interpolate_2d(
     d1: Float[jax.Array, "*batch 2 2 2"],
     d2: Float[jax.Array, "*batch 2 2"],
 ) -> Float[Bernstein2D, "*batch"]:
-    """Interpolate $f(x,y)$ with a degree-$(3,3)$ :class:`Bernstein2D`.
+    r"""Interpolate the first-order vertex jet by a bicubic Bernstein polynomial.
 
-    **Inputs:** vertex axes are ``vx, vy``: ``f[...,vx,vy]=f(vx,vy)``.
-    ``d1[...,vx,vy,0/1]=(f_x,f_y)`` and
-    ``d2[...,vx,vy]=f_xy``.
-    **Returns:** ``bpoly.order == [3, 3]``; ``bpoly.c[...,ix,iy]`` is in
-    the same ``x,y`` order as the vertex axes.
+    The result is the unique tensor-product polynomial
+
+    $$
+    p(x,y)=\sum_{i=0}^{3}\sum_{j=0}^{3}
+    c_{ij}B_i^3(x)B_j^3(y)\in\mathcal Q_3
+    $$
+
+    satisfying
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^2,\quad
+    \alpha\in\{0,1\}^2.
+    $$
+
+    Thus $f$, $f_x$, $f_y$, and $f_{xy}$ are reproduced at every vertex.
+    Degree $(3,3)$ means degree at most three in each coordinate.
+
+    **Inputs:** vertex axes are ``v_x,v_y``:
+    ``f[...,v_x,v_y]=f(v_x,v_y)``.
+    ``d1[...,v_x,v_y,0/1]=(f_x,f_y)`` and
+    ``d2[...,v_x,v_y]=f_xy``.
+    **Returns:** ``bpoly.order == [3,3]``;
+    ``bpoly.c[...,i_x,i_y]`` is in the same $x,y$ order as the vertex axes.
+    Leading batch axes are preserved.
     """
     return _interpolate(2, 3, (f, d1, d2))
 
 
 def hermite_interpolate_3d(f, d1, d2, d3):
-    """Return degree-(3,3,3) controls in ``x,y,z`` order.
+    r"""Interpolate the first-order vertex jet by a tricubic Bernstein polynomial.
 
-    ``f`` and ``d3=f_xyz`` have shape ``(*batch,2,2,2)``.
-    ``d1[...,0/1/2]=f_x/f_y/f_z`` and
-    ``d2[...,0/1/2]=f_xy/f_xz/f_yz`` have final derivative-kind axes.
+    For $\mathbf{x}=(x,y,z)$, the result is the unique
+    $p\in\mathcal Q_3$,
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf i\in\{0,\ldots,3\}^3}
+    c_{\mathbf i}\prod_{a=1}^{3}B_{i_a}^3(x_a),
+    $$
+
+    such that
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^3,\quad
+    \alpha\in\{0,1\}^3.
+    $$
+
+    It therefore reproduces at every vertex the value; $f_x,f_y,f_z$;
+    $f_{xy},f_{xz},f_{yz}$; and $f_{xyz}$. Degree $(3,3,3)$ is
+    coordinate-wise, not total degree.
+
+    ``f[...,v_x,v_y,v_z]`` and ``d3[...,v_x,v_y,v_z]=f_xyz`` have shape
+    ``(*batch,2,2,2)``.
+    ``d1[...,v_x,v_y,v_z,0/1/2]=(f_x,f_y,f_z)`` and
+    ``d2[...,v_x,v_y,v_z,0/1/2]=(f_xy,f_xz,f_yz)``.
+    The result has ``bpoly.order == [3,3,3]``;
+    ``bpoly.c[...,i_x,i_y,i_z]`` preserves $x,y,z$ order and leading batch
+    axes.
     """
     return _interpolate(3, 3, (f, d1, d2, d3))
 
 
 def hermite_interpolate_4d(f, d1, d2, d3, d4):
-    """Interpolate $f(x,y,z,w)$ with a degree-$(3,3,3,3)$ :class:`Bernstein4D`.
+    r"""Interpolate the first-order vertex jet by a 4D tensor-cubic polynomial.
 
-    **Inputs:** ``f[...,vx,vy,vz,vw]=f(vx,vy,vz,vw)``.
-    ``d1[...,0..3]=(f_x,f_y,f_z,f_w)``,
-    ``d2[...,0..5]=(f_xy,f_xz,f_xw,f_yz,f_yw,f_zw)``,
-    ``d3[...,0..3]=(f_xyz,f_xyw,f_xzw,f_yzw)``, and
-    ``d4[...,vx,vy,vz,vw]=f_xyzw``.
-    **Returns:** ``bpoly.order == [3, 3, 3, 3]``; output
-    ``bpoly.c[...,ix,iy,iz,iw]`` is in ``x,y,z,w`` order.
+    For $\mathbf{x}=(x,y,z,w)$, the result is the unique
+    $p\in\mathcal Q_3$,
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf i\in\{0,\ldots,3\}^4}
+    c_{\mathbf i}\prod_{a=1}^{4}B_{i_a}^3(x_a),
+    $$
+
+    satisfying
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^4,\quad
+    \alpha\in\{0,1\}^4.
+    $$
+
+    Consequently every derivative using each coordinate zero or one time is
+    reproduced at every vertex: the value, four first derivatives, six
+    second-order mixed derivatives, four third-order mixed derivatives, and
+    $f_{xyzw}$. Degree $(3,3,3,3)$ is coordinate-wise.
+
+    **Inputs:** ``f[...,v_x,v_y,v_z,v_w]=f(v_x,v_y,v_z,v_w)``.
+    ``d1[...,v_x,v_y,v_z,v_w,0..3]=(f_x,f_y,f_z,f_w)``,
+    ``d2[...,v_x,v_y,v_z,v_w,0..5]=(f_xy,f_xz,f_xw,f_yz,f_yw,f_zw)``,
+    ``d3[...,v_x,v_y,v_z,v_w,0..3]=(f_xyz,f_xyw,f_xzw,f_yzw)``, and
+    ``d4[...,v_x,v_y,v_z,v_w]=f_xyzw``.
+    **Returns:** ``bpoly.order == [3,3,3,3]``;
+    ``bpoly.c[...,i_x,i_y,i_z,i_w]`` is in $x,y,z,w$ order. Leading batch
+    axes are preserved.
     """
     return _interpolate(4, 3, (f, d1, d2, d3, d4))
 
 
 def quintic_hermite_interpolate_1d(f, d1, d2):
-    """Interpolate $f(x)$ with a degree-5 :class:`Bernstein`.
+    r"""Interpolate endpoint values through second derivatives by a quintic.
 
-    **Inputs:** ``f[...,vx]=f(vx)``, ``d1[...,vx]=f_x(vx)``, and
-    ``d2[...,vx]=f_xx(vx)``; all have shape ``(*batch,2)``.
-    **Returns:** ``bpoly.order == 5``; output ``bpoly.c[...,ix]`` is in
-    $x$ order.
+    The result
+
+    $$
+    p(x)=\sum_{i=0}^{5}c_iB_i^5(x)
+    $$
+
+    is the unique degree-at-most-five polynomial satisfying
+
+    $$
+    p^{(k)}(v)=f^{(k)}(v),
+    \qquad v\in\{0,1\},\quad k\in\{0,1,2\}.
+    $$
+
+    Thus the supplied value, first derivative, and second derivative are all
+    reproduced at both endpoints.
+
+    **Inputs:** ``f[...,v_x]=f(v_x)``, ``d1[...,v_x]=f_x(v_x)``, and
+    ``d2[...,v_x]=f_xx(v_x)``; all have shape ``(*batch,2)``.
+    **Returns:** ``bpoly.order == 5``; ``bpoly.c[...,i_x]`` is in $x$ order.
+    Leading batch axes are preserved.
     """
     return _interpolate(1, 5, (f, d1, d2))
 
 
 def quintic_hermite_interpolate_2d(f, d1, d2, d3, d4):
-    """Interpolate $f(x,y)$ with a degree-$(5,5)$ :class:`Bernstein2D`.
+    r"""Interpolate the second-order vertex jet by a biquintic polynomial.
 
-    **Inputs:** vertex axes are ``vx, vy``: ``f[...,vx,vy]=f(vx,vy)``.
-    ``d1[...,vx,vy,0/1]=(f_x,f_y)``,
-    ``d2[...,vx,vy,0/1/2]=(f_xx,f_xy,f_yy)``,
-    ``d3[...,vx,vy,0/1]=(f_xxy,f_xyy)``, and
-    ``d4[...,vx,vy]=f_xxyy``.
-    **Returns:** ``bpoly.order == [5, 5]``; ``bpoly.c[...,ix,iy]`` is in
-    the same ``x,y`` order as the vertex axes.
+    The result is the unique tensor-product polynomial
+
+    $$
+    p(x,y)=\sum_{i=0}^{5}\sum_{j=0}^{5}
+    c_{ij}B_i^5(x)B_j^5(y)\in\mathcal Q_5
+    $$
+
+    satisfying
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^2,\quad
+    \alpha\in\{0,1,2\}^2.
+    $$
+
+    Hence all nine derivatives formed by differentiating zero, one, or two
+    times in each coordinate are reproduced at every vertex:
+    $f,f_x,f_y,f_{xx},f_{xy},f_{yy},f_{xxy},f_{xyy},f_{xxyy}$.
+    Degree $(5,5)$ is coordinate-wise, not total degree.
+
+    **Inputs:** vertex axes are ``v_x,v_y``:
+    ``f[...,v_x,v_y]=f(v_x,v_y)``.
+    ``d1[...,v_x,v_y,0/1]=(f_x,f_y)``,
+    ``d2[...,v_x,v_y,0/1/2]=(f_xx,f_xy,f_yy)``,
+    ``d3[...,v_x,v_y,0/1]=(f_xxy,f_xyy)``, and
+    ``d4[...,v_x,v_y]=f_xxyy``.
+    **Returns:** ``bpoly.order == [5,5]``;
+    ``bpoly.c[...,i_x,i_y]`` is in the same $x,y$ order as the vertex axes.
+    Leading batch axes are preserved.
     """
     return _interpolate(2, 5, (f, d1, d2, d3, d4))
 
 
 def quintic_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
-    """Interpolate $f(x,y,z)$ with a degree-$(5,5,5)$ :class:`Bernstein3D`.
+    r"""Interpolate the second-order vertex jet by a triquintic polynomial.
 
-    **Inputs:** vertex axes are ``vx, vy, vz``:
-    ``f[...,vx,vy,vz]=f(vx,vy,vz)``.
-    ``d1[...,vx,vy,vz,0/1/2]=(f_x,f_y,f_z)``,
-    ``d2[...,vx,vy,vz,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_yy,f_yz,...)``,
-    ``d3[...,vx,vy,vz,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xyy,f_xyz,f_xzz,...)``,
-    ``d4[...,vx,vy,vz,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxzz,f_xyyz,f_xyzz,...)``,
-    ``d5[...,vx,vy,vz,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
-    ``d6[...,vx,vy,vz]=f_xxyyzz``.
-    **Returns:** ``bpoly.order == [5, 5, 5]``;
-    ``bpoly.c[...,ix,iy,iz]`` is in the same ``x,y,z`` order as the vertex
-    axes.
+    For $\mathbf{x}=(x,y,z)$, the result is the unique
+    $p\in\mathcal Q_5$,
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf i\in\{0,\ldots,5\}^3}
+    c_{\mathbf i}\prod_{a=1}^{3}B_{i_a}^5(x_a),
+    $$
+
+    satisfying
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^3,\quad
+    \alpha\in\{0,1,2\}^3.
+    $$
+
+    Therefore all $27$ supplied derivative kinds, including every mixed
+    derivative through $f_{xxyyzz}$, are reproduced at all eight vertices.
+    Degree $(5,5,5)$ means degree at most five in each coordinate.
+
+    **Inputs:** vertex axes are ``v_x,v_y,v_z``:
+    ``f[...,v_x,v_y,v_z]=f(v_x,v_y,v_z)``.
+    ``d1[...,v_x,v_y,v_z,0/1/2]=(f_x,f_y,f_z)``,
+    ``d2[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_yy,f_yz,...)``,
+    ``d3[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xyy,f_xyz,f_xzz,...)``,
+    ``d4[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxzz,f_xyyz,f_xyzz,...)``,
+    ``d5[...,v_x,v_y,v_z,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
+    ``d6[...,v_x,v_y,v_z]=f_xxyyzz``.
+    **Returns:** ``bpoly.order == [5,5,5]``;
+    ``bpoly.c[...,i_x,i_y,i_z]`` is in the same $x,y,z$ order as the vertex
+    axes. Leading batch axes are preserved.
     """
     return _interpolate(3, 5, (f, d1, d2, d3, d4, d5, d6))
 
 
 def quintic_hermite_interpolate_4d(f, d1, d2, d3, d4, d5, d6, d7, d8):
-    """Interpolate $f(x,y,z,w)$ with a degree-$(5,5,5,5)$ :class:`Bernstein4D`.
+    r"""Interpolate the second-order vertex jet by a 4D tensor-quintic polynomial.
 
-    **Inputs:** vertex axes are ``vx, vy, vz, vw``:
-    ``f[...,vx,vy,vz,vw]=f(vx,vy,vz,vw)``.
-    ``d1[...,vx,vy,vz,vw,0/1/2/3]=(f_x,f_y,f_z,f_w)``,
-    ``d2[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_xw,f_yy,...)``,
-    ``d3[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xxw,f_xyy,f_xyz,...)``,
-    ``d4[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxyw,f_xxzz,f_xxzw,...)``,
-    ``d5[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyyz,f_xxyyw,f_xxyzz,f_xxyzw,f_xxyww,...)``,
-    ``d6[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyyzz,f_xxyyzw,f_xxyyww,f_xxyzzw,f_xxyzww,...)``,
-    ``d7[...,vx,vy,vz,vw,0/1/2/3]=(f_xxyyzzw,f_xxyyzww,f_xxyzzww,f_xyyzzww)``,
-    and ``d8[...,vx,vy,vz,vw]=f_xxyyzzww``.
-    **Returns:** ``bpoly.order == [5, 5, 5, 5]``;
-    ``bpoly.c[...,ix,iy,iz,iw]`` is in the same ``x,y,z,w`` order as the
-    vertex axes.
+    For $\mathbf{x}=(x,y,z,w)$, the result is the unique
+    $p\in\mathcal Q_5$,
+
+    $$
+    p(\mathbf{x})=
+    \sum_{\mathbf i\in\{0,\ldots,5\}^4}
+    c_{\mathbf i}\prod_{a=1}^{4}B_{i_a}^5(x_a),
+    $$
+
+    satisfying
+
+    $$
+    \partial^\alpha p(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^4,\quad
+    \alpha\in\{0,1,2\}^4.
+    $$
+
+    Thus all $81$ supplied derivative kinds, from the value through
+    $f_{xxyyzzww}$, are reproduced at all $16$ vertices. Degree
+    $(5,5,5,5)$ is coordinate-wise rather than total degree.
+
+    **Inputs:** vertex axes are ``v_x,v_y,v_z,v_w``:
+    ``f[...,v_x,v_y,v_z,v_w]=f(v_x,v_y,v_z,v_w)``.
+    ``d1[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_x,f_y,f_z,f_w)``,
+    ``d2[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_xw,f_yy,...)``,
+    ``d3[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xxw,f_xyy,f_xyz,...)``,
+    ``d4[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxyw,f_xxzz,f_xxzw,...)``,
+    ``d5[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyz,f_xxyyw,f_xxyzz,f_xxyzw,f_xxyww,...)``,
+    ``d6[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyzz,f_xxyyzw,f_xxyyww,f_xxyzzw,f_xxyzww,...)``,
+    ``d7[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_xxyyzzw,f_xxyyzww,f_xxyzzww,f_xyyzzww)``,
+    and ``d8[...,v_x,v_y,v_z,v_w]=f_xxyyzzww``.
+    **Returns:** ``bpoly.order == [5,5,5,5]``;
+    ``bpoly.c[...,i_x,i_y,i_z,i_w]`` uses the same $x,y,z,w$ order as the
+    vertex axes. Leading batch axes are preserved.
     """
     return _interpolate(4, 5, (f, d1, d2, d3, d4, d5, d6, d7, d8))

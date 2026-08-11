@@ -285,18 +285,39 @@ def _interpolate(dimensions: int, groups):
 
 
 def rational_hermite_interpolate_1d(f, d1, d2):
-    r"""Interpolate $f(x)$ with a degree-3 :class:`RationalBernstein`.
+    r"""Interpolate endpoint values through second derivatives by a cubic rational.
 
-    **Inputs:** ``f[...,vx]=f(vx)``, ``d1[...,vx]=f_x(vx)``, and
-    ``d2[...,vx]=f_xx(vx)``; all have shape ``(*batch,2)``. Common leading
-    batch axes are preserved and each batch item is solved independently.
+    The result has the form
 
-    Writing the result as $R=N/D$, the equations follow
-    $\partial^\alpha N=\sum_{\gamma\leq\alpha}\binom{\alpha}{\gamma}
-    (\partial^\gamma f)(\partial^{\alpha-\gamma}D)$. Thus $R$, $R_x$, and
-    $R_{xx}$ reproduce the supplied endpoint data. Endpoint denominator
-    weights are fixed to one.
+    $$
+    R(x)=\frac{N(x)}{D(x)},\qquad
+    N(x)=\sum_{i=0}^{3}n_iB_i^3(x),\qquad
+    D(x)=\sum_{i=0}^{3}w_iB_i^3(x),
+    $$
 
+    and satisfies
+
+    $$
+    R^{(k)}(v)=f^{(k)}(v),
+    \qquad v\in\{0,1\},\quad k\in\{0,1,2\}.
+    $$
+
+    Thus every supplied value, first derivative, and second derivative is an
+    exact interpolation condition and is reproduced exactly. The coefficients
+    are found by differentiating $N=fD$ at each endpoint:
+
+    $$
+    N^{(k)}(v)=\sum_{j=0}^{k}\binom{k}{j}
+    f^{(j)}(v)D^{(k-j)}(v).
+    $$
+
+    The endpoint denominator controls are normalized to $w_0=w_3=1$, and all
+    reconstructed $w_i$ must be positive; consequently $D(x)>0$ on
+    $[0,1]$.
+
+    **Inputs:** ``f[...,v_x]=f(v_x)``,
+    ``d1[...,v_x]=f_x(v_x)``, and ``d2[...,v_x]=f_xx(v_x)``; all have shape
+    ``(*batch,2)``. Each leading batch item is solved independently.
     **Returns:** ``rpoly.order == 3``. A singular or inconsistent system, or
     any non-positive reconstructed denominator weight, raises an error.
     """
@@ -304,23 +325,63 @@ def rational_hermite_interpolate_1d(f, d1, d2):
 
 
 def rational_hermite_interpolate_2d(f, d1, d2, d3, d4):
-    r"""Interpolate $f(x,y)$ with a degree-$(3,3)$ rational Bernstein.
+    r"""Interpolate selected vertex derivatives by a bicubic rational function.
 
-    **Inputs:** vertex axes are ``vx,vy``:
-    ``f[...,vx,vy]=f(vx,vy)``.
-    ``d1[...,vx,vy,0/1]=(f_x,f_y)``,
-    ``d2[...,vx,vy,0/1/2]=(f_xx,f_xy,f_yy)``,
-    ``d3[...,vx,vy,0/1]=(f_xxy,f_xyy)``, and
-    ``d4[...,vx,vy]=f_xxyy``. Common leading batch axes are preserved and
-    each batch item is solved independently.
+    The result is
 
-    Writing the result as $R=N/D$, it reproduces every vertex derivative
-    $\partial^\alpha f$ for
-    $\alpha\in\{0,1\}^2\cup(\{0,2\}^2\setminus\{(0,0)\})$: the value,
-    gradient, Hessian, and $f_{xxyy}$. Every input is required; the Leibniz
-    equation for $R_{xxyy}$ also contains $f_{xxy}$ and $f_{xyy}$. Corner
-    denominator weights are fixed to one.
+    $$
+    R(\mathbf{x})=\frac{N(\mathbf{x})}{D(\mathbf{x})},
+    \qquad N,D\in\mathcal Q_3,
+    $$
 
+    where $\mathcal Q_3$ is the tensor-product space of degree at most three
+    in each coordinate. More explicitly,
+
+    $$
+    N(x,y)=\sum_{i,j=0}^{3}n_{ij}B_i^3(x)B_j^3(y),
+    \qquad
+    D(x,y)=\sum_{i,j=0}^{3}w_{ij}B_i^3(x)B_j^3(y).
+    $$
+
+    At every vertex, $R$ satisfies
+
+    $$
+    \partial^\alpha R(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^2,\quad
+    \alpha\in\mathcal S_2,
+    $$
+
+    with
+
+    $$
+    \mathcal S_2=
+    \{0,1\}^2\cup\left(\{0,2\}^2\setminus\{(0,0)\}\right).
+    $$
+
+    These conditions reproduce the value, gradient, full Hessian, and
+    $f_{xxyy}$. The supplied $f_{xxy}$ and $f_{xyy}$ are not themselves
+    reproduction conditions, but they are still required. The coefficients
+    follow from the vertex equations obtained by differentiating $N=fD$:
+
+    $$
+    \partial^\alpha N(\mathbf v)=
+    \sum_{\gamma\leq\alpha}\binom{\alpha}{\gamma}
+    \partial^\gamma f(\mathbf v)
+    \partial^{\alpha-\gamma}D(\mathbf v).
+    $$
+
+    In particular, the equation for $\alpha=(2,2)$ contains both auxiliary
+    third derivatives. Corner denominator controls are fixed to one and all
+    denominator controls must be positive, so $D>0$ on $[0,1]^2$.
+
+    **Inputs:** vertex axes are ``v_x,v_y``:
+    ``f[...,v_x,v_y]=f(v_x,v_y)``.
+    ``d1[...,v_x,v_y,0/1]=(f_x,f_y)``,
+    ``d2[...,v_x,v_y,0/1/2]=(f_xx,f_xy,f_yy)``,
+    ``d3[...,v_x,v_y,0/1]=(f_xxy,f_xyy)``, and
+    ``d4[...,v_x,v_y]=f_xxyy``. Each leading batch item is solved
+    independently.
     **Returns:** ``rpoly.order == [3,3]``. A singular or inconsistent system,
     or any non-positive reconstructed weight, raises an error.
     """
@@ -328,24 +389,64 @@ def rational_hermite_interpolate_2d(f, d1, d2, d3, d4):
 
 
 def rational_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
-    r"""Interpolate $f(x,y,z)$ with a degree-$(3,3,3)$ rational Bernstein.
+    r"""Interpolate selected vertex derivatives by a tricubic rational function.
 
-    **Inputs:** vertex axes are ``vx,vy,vz``:
-    ``f[...,vx,vy,vz]=f(vx,vy,vz)``.
-    ``d1[...,vx,vy,vz,0/1/2]=(f_x,f_y,f_z)``,
-    ``d2[...,vx,vy,vz,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_yy,f_yz,...)``,
-    ``d3[...,vx,vy,vz,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xyy,f_xyz,f_xzz,...)``,
-    ``d4[...,vx,vy,vz,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxzz,f_xyyz,f_xyzz,...)``,
-    ``d5[...,vx,vy,vz,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
-    ``d6[...,vx,vy,vz]=f_xxyyzz``. Derivative-kind counts are
-    ``3,6,7,6,3,1``. Common leading batch axes are preserved and solved
-    independently.
+    The result is a ratio of tensor-product cubics,
 
-    The result reproduces every vertex derivative $\partial^\alpha f$ for
-    $\alpha\in\{0,1\}^3\cup(\{0,2\}^3\setminus\{(0,0,0)\})$. Every other
-    supplied derivative is still used in the Leibniz equations for these
-    conditions. Corner denominator weights are fixed to one.
+    $$
+    R(\mathbf{x})=\frac{N(\mathbf{x})}{D(\mathbf{x})},
+    \qquad
+    N,D\in\mathcal Q_3,\qquad
+    P(\mathbf{x})
+    =\sum_{\mathbf i\in\{0,\ldots,3\}^3}
+    p_{\mathbf i}\prod_{a=1}^{3}B_{i_a}^3(x_a),
+    \quad P\in\{N,D\}.
+    $$
 
+    Its exact vertex interpolation conditions are
+
+    $$
+    \partial^\alpha R(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^3,\quad
+    \alpha\in\mathcal S_3,
+    $$
+
+    where
+
+    $$
+    \mathcal S_3=
+    \{0,1\}^3
+    \cup\left(\{0,2\}^3\setminus\{(0,0,0)\}\right).
+    $$
+
+    Hence all square-free derivatives and all nonzero doubled-axis
+    derivatives are reproduced, including $f_{xyz}$, the pure second
+    derivatives, the doubled-axis pair derivatives, and $f_{xxyyzz}$.
+    Derivatives supplied for multi-indices outside $\mathcal S_3$ are
+    auxiliary data, not additional reproduction conditions. They enter the
+    linear equations obtained from
+
+    $$
+    \partial^\alpha N(\mathbf v)=
+    \sum_{\gamma\leq\alpha}\binom{\alpha}{\gamma}
+    \partial^\gamma f(\mathbf v)
+    \partial^{\alpha-\gamma}D(\mathbf v).
+    $$
+
+    This is why every input group below is required. Corner denominator
+    controls are normalized to one; all reconstructed denominator controls
+    must be positive, ensuring $D>0$ on $[0,1]^3$.
+
+    **Inputs:** vertex axes are ``v_x,v_y,v_z``:
+    ``f[...,v_x,v_y,v_z]=f(v_x,v_y,v_z)``.
+    ``d1[...,v_x,v_y,v_z,0/1/2]=(f_x,f_y,f_z)``,
+    ``d2[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_yy,f_yz,...)``,
+    ``d3[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xyy,f_xyz,f_xzz,...)``,
+    ``d4[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxzz,f_xyyz,f_xyzz,...)``,
+    ``d5[...,v_x,v_y,v_z,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
+    ``d6[...,v_x,v_y,v_z]=f_xxyyzz``. Derivative-kind counts are
+    ``3,6,7,6,3,1``. Each leading batch item is solved independently.
     **Returns:** ``rpoly.order == [3,3,3]``. A singular or inconsistent
     system, or any non-positive reconstructed weight, raises an error.
     """
@@ -353,26 +454,66 @@ def rational_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
 
 
 def rational_hermite_interpolate_4d(f, d1, d2, d3, d4, d5, d6, d7, d8):
-    r"""Interpolate $f(x,y,z,w)$ with a degree-$(3,3,3,3)$ rational Bernstein.
+    r"""Interpolate selected vertex derivatives by a 4D tensor-cubic rational.
 
-    **Inputs:** vertex axes are ``vx,vy,vz,vw``:
-    ``f[...,vx,vy,vz,vw]=f(vx,vy,vz,vw)``.
-    ``d1[...,vx,vy,vz,vw,0/1/2/3]=(f_x,f_y,f_z,f_w)``,
-    ``d2[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_xw,f_yy,...)``,
-    ``d3[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xxw,f_xyy,f_xyz,...)``,
-    ``d4[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxyw,f_xxzz,f_xxzw,...)``,
-    ``d5[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyyz,f_xxyyw,f_xxyzz,f_xxyzw,f_xxyww,...)``,
-    ``d6[...,vx,vy,vz,vw,0/1/2/3/4/...]=(f_xxyyzz,f_xxyyzw,f_xxyyww,f_xxyzzw,f_xxyzww,...)``,
-    ``d7[...,vx,vy,vz,vw,0/1/2/3]=(f_xxyyzzw,f_xxyyzww,f_xxyzzww,f_xyyzzww)``,
-    and ``d8[...,vx,vy,vz,vw]=f_xxyyzzww``. Derivative-kind counts are
-    ``4,10,16,19,16,10,4,1``. Common leading batch axes are preserved and
-    solved independently.
+    The result is
 
-    The result reproduces every vertex derivative $\partial^\alpha f$ for
-    $\alpha\in\{0,1\}^4\cup(\{0,2\}^4\setminus\{(0,0,0,0)\})$. Every other
-    supplied derivative is still used in the Leibniz equations for these
-    conditions. Corner denominator weights are fixed to one.
+    $$
+    R(\mathbf{x})=\frac{N(\mathbf{x})}{D(\mathbf{x})},
+    \qquad
+    N,D\in\mathcal Q_3,\qquad
+    P(\mathbf{x})
+    =\sum_{\mathbf i\in\{0,\ldots,3\}^4}
+    p_{\mathbf i}\prod_{a=1}^{4}B_{i_a}^3(x_a),
+    \quad P\in\{N,D\}.
+    $$
 
+    Thus numerator and denominator both have degree at most three in each
+    coordinate. The exact interpolation conditions are
+
+    $$
+    \partial^\alpha R(\mathbf v)=\partial^\alpha f(\mathbf v),
+    \qquad
+    \mathbf v\in\{0,1\}^4,\quad
+    \alpha\in\mathcal S_4,
+    $$
+
+    with
+
+    $$
+    \mathcal S_4=
+    \{0,1\}^4
+    \cup\left(\{0,2\}^4\setminus\{(0,0,0,0)\}\right).
+    $$
+
+    This reproduces all square-free derivatives and every nonzero derivative
+    in which each coordinate is used zero or two times, through
+    $f_{xxyyzzww}$. Other supplied derivatives are auxiliary: they are not
+    reproduced, but are needed in the product-rule equations
+
+    $$
+    \partial^\alpha N(\mathbf v)=
+    \sum_{\gamma\leq\alpha}\binom{\alpha}{\gamma}
+    \partial^\gamma f(\mathbf v)
+    \partial^{\alpha-\gamma}D(\mathbf v)
+    $$
+
+    used to solve the denominator. Therefore none of the input groups below
+    can be omitted. Corner denominator controls are normalized to one and all
+    reconstructed controls must be positive, so $D>0$ on $[0,1]^4$.
+
+    **Inputs:** vertex axes are ``v_x,v_y,v_z,v_w``:
+    ``f[...,v_x,v_y,v_z,v_w]=f(v_x,v_y,v_z,v_w)``.
+    ``d1[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_x,f_y,f_z,f_w)``,
+    ``d2[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_xw,f_yy,...)``,
+    ``d3[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xxw,f_xyy,f_xyz,...)``,
+    ``d4[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxyw,f_xxzz,f_xxzw,...)``,
+    ``d5[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyz,f_xxyyw,f_xxyzz,f_xxyzw,f_xxyww,...)``,
+    ``d6[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyzz,f_xxyyzw,f_xxyyww,f_xxyzzw,f_xxyzww,...)``,
+    ``d7[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_xxyyzzw,f_xxyyzww,f_xxyzzww,f_xyyzzww)``,
+    and ``d8[...,v_x,v_y,v_z,v_w]=f_xxyyzzww``. Derivative-kind counts are
+    ``4,10,16,19,16,10,4,1``. Each leading batch item is solved
+    independently.
     **Returns:** ``rpoly.order == [3,3,3,3]``. A singular or inconsistent
     system, or any non-positive reconstructed weight, raises an error.
     """
