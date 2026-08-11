@@ -23,13 +23,132 @@ def _homogeneous_component(h: jax.Array, dimensions: int, index: int) -> jax.Arr
 
 
 class _RationalTensorBernstein(eqx.Module):
-    """Implement shared positive-weight rational tensor-product operations."""
+    r"""Represent a positive-weight rational tensor-product Bernstein function.
+
+    For parameter vector
+    $\mathbf{u}=(u_0,\ldots,u_{d-1})$, degree vector
+    $\mathbf{n}=(n_0,\ldots,n_{d-1})$, and multi-index
+    $\mathbf{i}=(i_0,\ldots,i_{d-1})$, define
+
+    $$
+    B_{\mathbf{i}}^{\mathbf{n}}(\mathbf{u})
+    =\prod_{a=0}^{d-1}B_{i_a}^{n_a}(u_a).
+    $$
+
+    The represented scalar function is
+
+    $$
+    R(\mathbf{u})=\frac{N(\mathbf{u})}{D(\mathbf{u})}
+    =\frac{\displaystyle\sum_{\mathbf{i}}
+    w_{\mathbf{i}}c_{\mathbf{i}}
+    B_{\mathbf{i}}^{\mathbf{n}}(\mathbf{u})}
+    {\displaystyle\sum_{\mathbf{i}}
+    w_{\mathbf{i}}B_{\mathbf{i}}^{\mathbf{n}}(\mathbf{u})},
+    \qquad w_{\mathbf{i}}>0.
+    $$
+
+    Because the tensor-product basis is nonnegative and forms a partition of
+    unity on $[0,1]^d$, $D(\mathbf{u})>0$ throughout the domain.
+
+    Homogeneous and array layout
+    ----------------------------
+
+    For arrays ``values`` and ``weights`` of shape
+    ``(*batch, n_0 + 1, ..., n_{d-1} + 1)``, the stored homogeneous array has
+    shape ``(*batch, 2, n_0 + 1, ..., n_{d-1} + 1)`` and satisfies
+
+    $$
+    h_{0,\mathbf{i}}=w_{\mathbf{i}}c_{\mathbf{i}},\qquad
+    h_{1,\mathbf{i}}=w_{\mathbf{i}}.
+    $$
+
+    The length-2 homogeneous axis precedes the final $d$ parameter-degree
+    axes. All earlier axes are independent batch axes. The leading shapes of
+    ``values`` and ``weights`` broadcast; their final $d$ shapes must agree.
+
+    Batch dimensions
+    ----------------
+
+    Only axes before the homogeneous and parameter-degree axes are batch
+    axes. For example, these inputs broadcast to batch shape ``(2, 4)`` while
+    retaining degree vector $(1,2)$:
+
+    ```python
+    >>> import jax.numpy as jnp
+    >>> from xbernstein import RationalBernstein2D
+    >>> surfaces = RationalBernstein2D(
+    ...     jnp.zeros((2, 1, 2, 3)),
+    ...     jnp.ones((1, 4, 2, 3)),
+    ... )
+    >>> surfaces.shape, surfaces.h.shape
+    ((2, 4), (2, 4, 2, 2, 3))
+
+    ```
+
+    Arithmetic broadcasts only these leading axes. Parameter-degree axes are
+    combined by Bernstein algebra, not raw-array broadcasting. Rational
+    addition, subtraction, and multiplication use denominator products, so
+    all three add the two degree vectors componentwise:
+
+    ```python
+    >>> left = RationalBernstein2D(jnp.zeros((2, 2, 3)), jnp.ones((2, 3)))
+    >>> right = RationalBernstein2D(jnp.zeros((3, 2)), jnp.ones((3, 2)))
+    >>> result = left + right
+    >>> result.shape
+    (2,)
+    >>> result.order.tolist()
+    [3, 3]
+
+    ```
+
+    The operators ``+``, ``-``, and ``*`` use right-aligned broadcasting for
+    every leading axis. Incompatible true batch shapes raise ``ValueError``.
+    Coordinate arrays behave differently: they broadcast with one another to
+    create evaluation axes after the coefficient batch axes:
+
+    ```python
+    >>> surfaces(jnp.zeros((5, 1)), jnp.zeros((1, 6))).shape
+    (2, 4, 5, 6)
+    >>> first = RationalBernstein2D(jnp.zeros((2, 2, 3)), jnp.ones((2, 2, 3)))
+    >>> second = RationalBernstein2D(jnp.zeros((3, 2, 3)), jnp.ones((3, 2, 3)))
+    >>> try:
+    ...     first + second
+    ... except ValueError as error:
+    ...     type(error).__name__
+    'ValueError'
+
+    ```
+
+    Integration
+    -----------
+
+    ``integrate_out()`` is deliberately unavailable. In general,
+
+    $$
+    \int_0^1
+    \frac{N(u_a,\mathbf{u}_{\neg a})}
+         {D(u_a,\mathbf{u}_{\neg a})}\,du_a
+    $$
+
+    may contain logarithmic or inverse-trigonometric terms and therefore
+    cannot be represented exactly by a lower-dimensional rational Bernstein
+    function.
+    """
 
     h: Float[jax.Array, "..."]
     parameter_dimensions: ClassVar[int]
     polynomial_type: ClassVar[type]
 
     def __init__(self, values, weights):
+        r"""Initialize control values $c_{\mathbf{i}}$ and weights $w_{\mathbf{i}}$.
+
+        The final ``parameter_dimensions`` axes of both inputs are the
+        tensor-product coefficient axes and must match exactly. Leading axes
+        broadcast. Every weight must be strictly positive.
+
+        See :class:`_RationalTensorBernstein` for examples that distinguish
+        batch, homogeneous-component, and parameter-degree axes.
+        """
         dimensions = self.parameter_dimensions
         values = jnp.asarray(values)
         weights = jnp.asarray(weights)
@@ -67,55 +186,137 @@ class _RationalTensorBernstein(eqx.Module):
 
     @property
     def values(self) -> jax.Array:
-        """Return the dehomogenized tensor control values."""
+        r"""Return the dehomogenized controls $c_{\mathbf{i}}$.
+
+        They are recovered componentwise from
+
+        $$
+        c_{\mathbf{i}}=
+        \frac{h_{0,\mathbf{i}}}{h_{1,\mathbf{i}}}.
+        $$
+
+        The result has shape
+        ``(*batch, n_0 + 1, ..., n_{d-1} + 1)``.
+        """
         return self.numerator.c / self.denominator.c
 
     @property
     def weights(self) -> jax.Array:
-        """Return the positive tensor weights."""
+        r"""Return the positive weights $w_{\mathbf{i}}=h_{1,\mathbf{i}}$.
+
+        Their shape matches :attr:`values`, and positivity guarantees
+        $D(\mathbf{u})>0$ on $[0,1]^d$.
+        """
         return self.denominator.c
 
     @property
     def c(self) -> jax.Array:
-        """Return :attr:`values` using the conventional short name."""
+        r"""Return $c_{\mathbf{i}}$ as an alias of :attr:`values`.
+
+        These are dehomogenized controls, not the numerator coefficients
+        $w_{\mathbf{i}}c_{\mathbf{i}}$.
+        """
         return self.values
 
     @property
     def w(self) -> jax.Array:
-        """Return :attr:`weights` using the conventional short name."""
+        r"""Return $w_{\mathbf{i}}$ as an alias of :attr:`weights`."""
         return self.weights
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Return the leading batch shape."""
+        r"""Return the leading batch shape ``*batch``.
+
+        This excludes the homogeneous-component axis and all $d$
+        parameter-degree axes.
+        """
         return self.h.shape[: -(self.parameter_dimensions + 1)]
 
     @property
     def order(self) -> jax.Array:
-        """Return the parameter-wise degree vector."""
+        r"""Return the degree vector $\mathbf{n}=(n_0,\ldots,n_{d-1})$.
+
+        If the final coefficient axes have lengths
+        ``(n_0 + 1, ..., n_{d-1} + 1)``, this property returns a JAX integer
+        array of shape ``(d,)`` in the same parameter order.
+        """
         return jnp.asarray(self.h.shape[-self.parameter_dimensions :]) - 1
 
     @property
     def dtype(self) -> str:
-        """Return the homogeneous coefficient dtype."""
+        r"""Return the scalar dtype shared by the homogeneous components."""
         return str(self.h.dtype)
 
     @property
     def numerator(self):
-        """Return the tensor Bernstein numerator."""
+        r"""Return the tensor Bernstein numerator $N$.
+
+        Its coefficients are
+
+        $$
+        n_{\mathbf{i}}=w_{\mathbf{i}}c_{\mathbf{i}}
+        =h_{0,\mathbf{i}},
+        \qquad
+        N(\mathbf{u})=\sum_{\mathbf{i}}
+        n_{\mathbf{i}}B_{\mathbf{i}}^{\mathbf{n}}(\mathbf{u}).
+        $$
+
+        The return type is the matching polynomial class
+        (:class:`Bernstein2D`, :class:`Bernstein3D`, or
+        :class:`Bernstein4D`).
+        """
         return self.polynomial_type(
             _homogeneous_component(self.h, self.parameter_dimensions, 0)
         )
 
     @property
     def denominator(self):
-        """Return the positive tensor Bernstein denominator."""
+        r"""Return the positive tensor Bernstein denominator $D$.
+
+        Its coefficients are
+
+        $$
+        d_{\mathbf{i}}=w_{\mathbf{i}}=h_{1,\mathbf{i}},
+        \qquad
+        D(\mathbf{u})=\sum_{\mathbf{i}}
+        d_{\mathbf{i}}B_{\mathbf{i}}^{\mathbf{n}}(\mathbf{u})>0.
+        $$
+        """
         return self.polynomial_type(
             _homogeneous_component(self.h, self.parameter_dimensions, 1)
         )
 
     def __call__(self, *ts):
-        """Evaluate the rational tensor function at ``ts``."""
+        r"""Evaluate $R(\mathbf{u})=N(\mathbf{u})/D(\mathbf{u})$.
+
+        ``ts`` supplies exactly one coordinate array for each component
+        $(u_0,\ldots,u_{d-1})$. Numerator and denominator are evaluated by
+        tensor-product De Casteljau reduction and then divided.
+
+        Broadcast-compatible coordinate arrays form shared evaluation axes
+        after ``self.shape``. For example, coordinate shapes ``(k, 1)`` and
+        ``(1, l)`` produce evaluation shape ``(k, l)``.
+
+        Batch dimensions
+        ----------------
+
+        A scalar coordinate is shared by every batch item, while array
+        coordinates append broadcast evaluation axes:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import RationalBernstein2D
+        >>> surfaces = RationalBernstein2D(
+        ...     jnp.zeros((2, 3, 2, 3)),
+        ...     jnp.ones((2, 3, 2, 3)),
+        ... )
+        >>> surfaces(0.25, 0.75).shape
+        (2, 3)
+        >>> surfaces(jnp.zeros((4, 1)), jnp.zeros((1, 5))).shape
+        (2, 3, 4, 5)
+
+        ```
+        """
         return self.numerator(*ts) / self.denominator(*ts)
 
     def _check_other(self, other: object):
@@ -127,7 +328,19 @@ class _RationalTensorBernstein(eqx.Module):
         return other
 
     def __add__(self, other: object):
-        """Return the exact pointwise sum."""
+        r"""Return the exact pointwise sum.
+
+        For $R_1=N_1/D_1$ and $R_2=N_2/D_2$,
+
+        $$
+        R_1+R_2=\frac{N_1D_2+N_2D_1}{D_1D_2}.
+        $$
+
+        Tensor Bernstein products add the degree vectors componentwise, and
+        ``other`` must have the same rational tensor type. See
+        :class:`_RationalTensorBernstein` for the shared arithmetic batch
+        convention.
+        """
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
@@ -137,7 +350,18 @@ class _RationalTensorBernstein(eqx.Module):
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
     def __sub__(self, other: object):
-        """Return the exact pointwise difference."""
+        r"""Return the exact pointwise difference.
+
+        For $R_1=N_1/D_1$ and $R_2=N_2/D_2$,
+
+        $$
+        R_1-R_2=\frac{N_1D_2-N_2D_1}{D_1D_2}.
+        $$
+
+        The denominator product remains positive throughout $[0,1]^d$ and
+        degree vectors add componentwise. The shared arithmetic batch
+        convention is documented by :class:`_RationalTensorBernstein`.
+        """
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
@@ -147,14 +371,60 @@ class _RationalTensorBernstein(eqx.Module):
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
     def __mul__(self, other: object):
-        """Return the exact pointwise product."""
+        r"""Return the exact pointwise product.
+
+        For $R_1=N_1/D_1$ and $R_2=N_2/D_2$,
+
+        $$
+        R_1R_2=\frac{N_1N_2}{D_1D_2}.
+        $$
+
+        Tensor Bernstein multiplication gives degree vector
+        $\mathbf{n}_1+\mathbf{n}_2$ and preserves denominator positivity. The
+        shared arithmetic batch convention is documented by
+        :class:`_RationalTensorBernstein`.
+        """
         other = self._check_other(other)
         numerator = self.numerator * other.numerator
         denominator = self.denominator * other.denominator
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
     def deriv(self, m: int = 1, axis: int = 0):
-        """Return the exact ``m``-th partial derivative along ``axis``."""
+        r"""Return the exact partial derivative $\partial_{u_a}^mR$.
+
+        With $a=$ ``axis``, one step applies
+
+        $$
+        \partial_{u_a}R
+        =\frac{(\partial_{u_a}N)D-N(\partial_{u_a}D)}{D^2}.
+        $$
+
+        The quotient rule is repeated ``m`` times. After each step, the
+        numerator is degree-elevated along any shorter parameter axis so it
+        shares the denominator's degree vector; this does not change the
+        represented function. ``m=0`` returns ``self``.
+
+        Batch dimensions
+        ----------------
+
+        Partial differentiation acts independently on every batch item. It
+        preserves all leading axes and changes only the homogeneous
+        coefficient degrees:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import RationalBernstein2D
+        >>> surfaces = RationalBernstein2D(
+        ...     jnp.zeros((2, 3, 3, 4)),
+        ...     jnp.ones((3, 4)),
+        ... )
+        >>> surfaces.deriv(axis=1).shape
+        (2, 3)
+        >>> surfaces.deriv(axis=1).h.shape
+        (2, 3, 2, 5, 7)
+
+        ```
+        """
         self.numerator._axis_index(axis)
         if m < 0:
             raise ValueError("derivative order must be non-negative")
@@ -175,7 +445,47 @@ class _RationalTensorBernstein(eqx.Module):
         return result
 
     def split(self, t: jax.Array | float = jnp.array(0.5), axis: int = 0):
-        """Split and reparameterize one tensor parameter axis."""
+        r"""Split along $u_a=\tau$ and reparameterize both pieces.
+
+        With $a=$ ``axis`` and a new coordinate $s\in[0,1]$, the first result
+        represents
+
+        $$
+        R_{\mathrm{left}}(\mathbf{u}_{\neg a},s)
+        =R(u_0,\ldots,\tau s,\ldots,u_{d-1}),
+        $$
+
+        while the second represents
+
+        $$
+        R_{\mathrm{right}}(\mathbf{u}_{\neg a},s)
+        =R(u_0,\ldots,\tau+(1-\tau)s,\ldots,u_{d-1}).
+        $$
+
+        Homogeneous numerator and denominator tensors are subdivided by De
+        Casteljau. Positive weights remain positive, and both results retain
+        the input type, degree vector, and batch shape.
+
+        Batch dimensions
+        ----------------
+
+        A scalar $\tau$ is shared by all batch items. An array with
+        ``self.shape`` may select one split value per item; both pieces retain
+        the original homogeneous shape:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import RationalBernstein2D
+        >>> surfaces = RationalBernstein2D(
+        ...     jnp.zeros((2, 2, 3)),
+        ...     jnp.ones((2, 2, 3)),
+        ... )
+        >>> left, right = surfaces.split(jnp.array([0.25, 0.75]), axis=0)
+        >>> left.h.shape, right.h.shape
+        ((2, 2, 2, 3), (2, 2, 2, 3))
+
+        ```
+        """
         numerator_left, numerator_right = self.numerator.split(t=t, axis=axis)
         denominator_left, denominator_right = self.denominator.split(t=t, axis=axis)
         return (
@@ -197,45 +507,171 @@ class _RationalTensorBernstein(eqx.Module):
         raise RuntimeError("rational tensor functions require at least 2 dimensions")
 
     def slice(self, value: jax.Array | float, axis: int = 0):
-        """Fix one parameter and return the lower-dimensional rational function."""
+        r"""Restrict to the coordinate hyperplane $u_a=v$.
+
+        For $a=$ ``axis`` and $v=$ ``value``, the returned function is
+
+        $$
+        Q(u_0,\ldots,u_{a-1},u_{a+1},\ldots,u_{d-1})
+        =R(u_0,\ldots,u_{a-1},v,u_{a+1},\ldots,u_{d-1}).
+        $$
+
+        De Casteljau evaluation removes the selected parameter-degree axis
+        from both homogeneous components. The return type has one fewer
+        parameter dimension: 2D becomes :class:`RationalBernstein`, 3D becomes
+        :class:`RationalBernstein2D`, and 4D becomes
+        :class:`RationalBernstein3D`. ``value`` broadcasts with leading batch
+        axes.
+
+        Batch dimensions
+        ----------------
+
+        The fixed value broadcasts against ``self.shape``. The result retains
+        the broadcast batch axes and removes exactly one parameter-degree
+        axis:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import RationalBernstein2D
+        >>> surfaces = RationalBernstein2D(
+        ...     jnp.zeros((2, 3, 2, 3)),
+        ...     jnp.ones((2, 3, 2, 3)),
+        ... )
+        >>> curves = surfaces.slice(jnp.zeros((2, 1)), axis=0)
+        >>> curves.shape, curves.h.shape
+        ((2, 3), (2, 3, 2, 3))
+
+        ```
+        """
         numerator = self.numerator.slice(value=value, axis=axis)
         denominator = self.denominator.slice(value=value, axis=axis)
         return self._lower_dimension(numerator.c, denominator.c)
 
     def segment(self, start: jax.Array, end: jax.Array) -> RationalBernstein:
-        """Restrict the rational tensor function to an affine segment."""
+        r"""Restrict $R$ to the affine segment from ``start`` to ``end``.
+
+        For endpoints $\mathbf{a}$ and $\mathbf{b}$, the returned
+        :class:`RationalBernstein` represents
+
+        $$
+        Q(t)=R\bigl(\mathbf{a}+t(\mathbf{b}-\mathbf{a})\bigr),
+        \qquad 0\leq t\leq1.
+        $$
+
+        The tensor numerator and denominator are each transformed exactly to
+        a univariate Bernstein polynomial using the tensor-product blossom.
+        Their resulting coefficients form the homogeneous representation of
+        $Q$. Endpoint arrays have final length $d$ and their leading shapes
+        broadcast with ``self.shape``.
+
+        Batch dimensions
+        ----------------
+
+        ``start`` and ``end`` have shapes ``(*endpoint_batch, d)``. Their
+        leading shapes broadcast with each other and with ``self.shape``.
+        Every tensor degree axis is replaced by one univariate axis of degree
+        $\sum_a n_a$:
+
+        ```python
+        >>> import jax.numpy as jnp
+        >>> from xbernstein import RationalBernstein2D
+        >>> surfaces = RationalBernstein2D(
+        ...     jnp.zeros((2, 3, 2, 3)),
+        ...     jnp.ones((2, 3, 2, 3)),
+        ... )
+        >>> curves = surfaces.segment(
+        ...     jnp.zeros((2, 1, 2)),
+        ...     jnp.ones((1, 3, 2)),
+        ... )
+        >>> curves.shape, curves.h.shape
+        ((2, 3), (2, 3, 2, 4))
+
+        ```
+        """
         numerator = self.numerator.segment(start, end)
         denominator = self.denominator.segment(start, end)
         return _from_homogeneous(numerator.c, denominator.c)
 
 
 class RationalBernstein2D(_RationalTensorBernstein):
-    """Represent a positive-weight scalar rational Bernstein function on $[0,1]^2$."""
+    r"""Represent a positive-weight scalar rational Bernstein function on $[0,1]^2$.
+
+    ``values`` and ``weights`` have shape
+    ``(*batch, n_x + 1, n_y + 1)`` and define
+
+    $$
+    R(x,y)=
+    \frac{\sum_{i=0}^{n_x}\sum_{j=0}^{n_y}
+    w_{ij}c_{ij}B_i^{n_x}(x)B_j^{n_y}(y)}
+    {\sum_{i=0}^{n_x}\sum_{j=0}^{n_y}
+    w_{ij}B_i^{n_x}(x)B_j^{n_y}(y)}.
+    $$
+
+    The inherited :attr:`order` is $[n_x,n_y]$. See
+    :class:`_RationalTensorBernstein` for homogeneous layout, constructor and
+    arithmetic batch broadcasting, evaluation axes, and operation semantics.
+    """
 
     parameter_dimensions: ClassVar[int] = 2
     polynomial_type: ClassVar[type] = Bernstein2D
 
     def __init__(self, values, weights):
+        """Initialize 2D control values and strictly positive weights."""
         super().__init__(values, weights)
 
 
 class RationalBernstein3D(_RationalTensorBernstein):
-    """Represent a positive-weight scalar rational Bernstein function on $[0,1]^3$."""
+    r"""Represent a positive-weight scalar rational Bernstein function on $[0,1]^3$.
+
+    The coefficient arrays have shape
+    ``(*batch, n_x + 1, n_y + 1, n_z + 1)``. With
+    $\mathbf{u}=(x,y,z)$, the function is
+
+    $$
+    R(\mathbf{u})=
+    \frac{\sum_{i,j,k}w_{ijk}c_{ijk}
+    B_i^{n_x}(x)B_j^{n_y}(y)B_k^{n_z}(z)}
+    {\sum_{i,j,k}w_{ijk}
+    B_i^{n_x}(x)B_j^{n_y}(y)B_k^{n_z}(z)}.
+    $$
+
+    The inherited :attr:`order` is $[n_x,n_y,n_z]$. See
+    :class:`_RationalTensorBernstein` for the shared batch and arithmetic
+    conventions.
+    """
 
     parameter_dimensions: ClassVar[int] = 3
     polynomial_type: ClassVar[type] = Bernstein3D
 
     def __init__(self, values, weights):
+        """Initialize 3D control values and strictly positive weights."""
         super().__init__(values, weights)
 
 
 class RationalBernstein4D(_RationalTensorBernstein):
-    """Represent a positive-weight scalar rational Bernstein function on $[0,1]^4$."""
+    r"""Represent a positive-weight scalar rational Bernstein function on $[0,1]^4$.
+
+    The coefficient arrays have shape
+    ``(*batch, n_0 + 1, n_1 + 1, n_2 + 1, n_3 + 1)`` and define
+
+    $$
+    R(\mathbf{u})=
+    \frac{\sum_{\mathbf{i}}w_{\mathbf{i}}c_{\mathbf{i}}
+    \prod_{a=0}^3B_{i_a}^{n_a}(u_a)}
+    {\sum_{\mathbf{i}}w_{\mathbf{i}}
+    \prod_{a=0}^3B_{i_a}^{n_a}(u_a)}.
+    $$
+
+    The inherited :attr:`order` is $[n_0,n_1,n_2,n_3]$. See
+    :class:`_RationalTensorBernstein` for the shared batch and arithmetic
+    conventions.
+    """
 
     parameter_dimensions: ClassVar[int] = 4
     polynomial_type: ClassVar[type] = Bernstein4D
 
     def __init__(self, values, weights):
+        """Initialize 4D control values and strictly positive weights."""
         super().__init__(values, weights)
 
 
