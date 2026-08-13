@@ -26,6 +26,8 @@ workflows that need Bernstein-basis operations without leaving JAX.
   rational Hermite interpolants in one to four dimensions.
 - **Rectilinear grid interpolation** — evaluate and traverse nonuniform 3D
   grids of tricubic rational Hermite patches.
+- **Piecewise spatial curves** — construct G² cubic rational Bernstein
+  segments from 3D node positions, tangent directions, and curvatures.
 - **Global optimization** — approximate minima and maxima with
   Bernstein-basis branch-and-bound solvers.
 
@@ -83,6 +85,7 @@ many polynomials at once.
 | Rational simplex function | `RationalBernstein2DS`, `RationalBernstein3DS`, `RationalBernstein4DS` |
 | Interpolation | `linear_interpolate_*d`, `hermite_interpolate_*d`, `quintic_hermite_interpolate_*d`, `rational_hermite_interpolate_*d` |
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
+| Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
 | Optimization | `minimize`, `maximize` |
 
 Tensor-product classes use one trailing coefficient axis per parameter.
