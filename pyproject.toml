@@ -1,7 +1,7 @@
 [project]
 name = "xbernstein"
 version = "0.1.0"
-description = "Add your description here"
+description = "JAX-compatible Bernstein polynomial operations for tensor-product, simplex, and rational functions."
 readme = "README.md"
 authors = [
     { name = "Akishika, Issui", email = "kshkss@users.noreply.github.com" }
