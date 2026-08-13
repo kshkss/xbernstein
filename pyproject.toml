@@ -24,3 +24,9 @@ venvPath = "."
 
 [tool.ruff]
 lint.ignore=["F722"]
+
+[dependency-groups]
+dev = [
+    "mkdocstrings-python>=2.0.5",
+    "zensical>=0.0.50",
+]
