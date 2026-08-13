@@ -31,6 +31,7 @@ from .rational_hermite import (
     rational_hermite_interpolate_3d,
     rational_hermite_interpolate_4d,
 )
+from .rational_hermite_grid_3d import GridSegment3D, RationalHermiteGrid3D
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -61,6 +62,8 @@ __all__ = [
     "RationalBernstein2DS",
     "RationalBernstein3DS",
     "RationalBernstein4DS",
+    "GridSegment3D",
+    "RationalHermiteGrid3D",
     "rational_hermite_interpolate_1d",
     "rational_hermite_interpolate_2d",
     "rational_hermite_interpolate_3d",
