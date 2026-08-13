@@ -5,147 +5,106 @@ icon: lucide/rocket
 
 # Get started
 
-For full documentation visit [zensical.org](https://zensical.org/docs/).
+`xbernstein` is JAX-compatible Bernstein polynomial operations for tensor-product, simplex,
+and rational functions.
 
-## Commands
+`xbernstein` provides immutable polynomial objects that work with JAX arrays
+and transformations. It is designed for numerical geometry and optimization
+workflows that need Bernstein-basis operations without leaving JAX.
 
-* [`zensical new`][new] - Create a new project
-* [`zensical serve`][serve] - Start local web server
-* [`zensical build`][build] - Build your site
+## Features
 
-  [new]: https://zensical.org/docs/usage/new/
-  [serve]: https://zensical.org/docs/usage/preview/
-  [build]: https://zensical.org/docs/usage/build/
+- **JAX-native computation** — use JIT compilation, vectorization, and batched
+  coefficient arrays.
+- **Multiple domains** — work on `[0, 1]`, tensor-product domains
+  `[0, 1]^d`, or simplices in two to four dimensions.
+- **Polynomial and rational forms** — represent ordinary Bernstein
+  polynomials and positive-weight rational Bernstein functions.
+- **Basis-preserving operations** — evaluate, differentiate, integrate, split,
+  slice, restrict to segments, and combine polynomials.
+- **Interpolation helpers** — construct linear, Hermite, quintic Hermite, and
+  rational Hermite interpolants in one to four dimensions.
+- **Global optimization** — approximate minima and maxima with
+  Bernstein-basis branch-and-bound solvers.
 
-## Examples
+## Installation
 
-### Admonitions
+`xbernstein` requires Python 3.11 or later. Install the latest version directly
+from GitHub:
 
-> Go to [documentation](https://zensical.org/docs/authoring/admonitions/)
-
-!!! note
-
-    This is a **note** admonition. Use it to provide helpful information.
-
-!!! warning
-
-    This is a **warning** admonition. Be careful!
-
-### Details
-
-> Go to [documentation](https://zensical.org/docs/authoring/admonitions/#collapsible-blocks)
-
-??? info "Click to expand for more info"
-
-    This content is hidden until you click to expand it.
-    Great for FAQs or long explanations.
-
-## Code Blocks
-
-> Go to [documentation](https://zensical.org/docs/authoring/code-blocks/)
-
-``` python hl_lines="2" title="Code blocks"
-def greet(name):
-    print(f"Hello, {name}!") # (1)!
-
-greet("Python")
+```console
+python -m pip install "xbernstein @ git+https://github.com/kshkss/xbernstein.git"
 ```
 
-1.  > Go to [documentation](https://zensical.org/docs/authoring/code-blocks/#code-annotations)
+The package installs JAX as a dependency. For GPU, TPU, or other
+platform-specific JAX builds, follow the
+[JAX installation guide](https://docs.jax.dev/en/latest/installation.html).
 
-    Code annotations allow to attach notes to lines of code.
+## Quick start
 
-Code can also be highlighted inline: `#!python print("Hello, Python!")`.
+Create a polynomial from its Bernstein coefficients, evaluate it, and apply
+operations that return new Bernstein objects:
 
-## Content tabs
+```python
+import jax
+import jax.numpy as jnp
 
-> Go to [documentation](https://zensical.org/docs/authoring/content-tabs/)
+from xbernstein import Bernstein, minimize
 
-=== "Python"
+polynomial = Bernstein(jnp.array([1.0, -1.0, 2.0]))
 
-    ``` python
-    print("Hello from Python!")
-    ```
+points = jnp.linspace(0.0, 1.0, 5)
+evaluate = jax.jit(lambda x: polynomial(x))
+values = evaluate(points)
 
-=== "Rust"
+derivative = polynomial.deriv()
+left, right = polynomial.split(jnp.array(0.5))
+minimum = minimize(polynomial)
 
-    ``` rs
-    println!("Hello from Rust!");
-    ```
-
-## Diagrams
-
-> Go to [documentation](https://zensical.org/docs/authoring/diagrams/)
-
-``` mermaid
-graph LR
-  A[Start] --> B{Error?};
-  B -->|Yes| C[Hmm...];
-  C --> D[Debug];
-  D --> B;
-  B ---->|No| E[Yay!];
+print(values)
+print(minimum.f, minimum.x)
 ```
 
-## Footnotes
+The final coefficient axis stores the Bernstein coefficients. Any leading
+axes are preserved as batch or value axes, so the same operations can process
+many polynomials at once.
 
-> Go to [documentation](https://zensical.org/docs/authoring/footnotes/)
+## API overview
 
-Here's a sentence with a footnote.[^1]
+| Domain and representation | Public API |
+| --- | --- |
+| One-dimensional polynomial | `Bernstein` |
+| Tensor-product polynomial | `Bernstein2D`, `Bernstein3D`, `Bernstein4D` |
+| Simplex polynomial | `Bernstein2DS`, `Bernstein3DS`, `Bernstein4DS` |
+| One-dimensional rational function | `RationalBernstein` |
+| Tensor-product rational function | `RationalBernstein2D`, `RationalBernstein3D`, `RationalBernstein4D` |
+| Rational simplex function | `RationalBernstein2DS`, `RationalBernstein3DS`, `RationalBernstein4DS` |
+| Interpolation | `linear_interpolate_*d`, `hermite_interpolate_*d`, `quintic_hermite_interpolate_*d`, `rational_hermite_interpolate_*d` |
+| Optimization | `minimize`, `maximize` |
 
-Hover it, to see a tooltip.
+Tensor-product classes use one trailing coefficient axis per parameter.
+Simplex classes pack coefficients into one trailing axis and evaluate from
+barycentric coordinates. Rational classes take dehomogenized control values
+and strictly positive weights:
 
-[^1]: This is the footnote.
+```python
+import jax.numpy as jnp
 
+from xbernstein import RationalBernstein2D
 
-## Formatting
+surface = RationalBernstein2D(
+    values=jnp.array([[0.0, 1.0], [1.0, 2.0]]),
+    weights=jnp.array([[1.0, 2.0], [1.0, 1.0]]),
+)
 
-> Go to [documentation](https://zensical.org/docs/authoring/formatting/)
+value = surface(0.25, 0.75)
+diagonal = surface.segment(jnp.zeros(2), jnp.ones(2))
+```
 
-- ==This was marked (highlight)==
-- ^^This was inserted (underline)^^
-- ~~This was deleted (strikethrough)~~
-- H~2~O
-- A^T^A
-- ++ctrl+alt+del++
+See the public exports in
+[`src/xbernstein/__init__.py`](src/xbernstein/__init__.py) and the
+implementation docstrings for detailed signatures and representation rules.
 
-## Icons, Emojis
+## License
 
-> Go to [documentation](https://zensical.org/docs/authoring/icons-emojis/)
-
-* :sparkles: `:sparkles:`
-* :rocket: `:rocket:`
-* :tada: `:tada:`
-* :memo: `:memo:`
-* :eyes: `:eyes:`
-
-## Maths
-
-> Go to [documentation](https://zensical.org/docs/authoring/math/)
-
-$$
-\cos x=\sum_{k=0}^{\infty}\frac{(-1)^k}{(2k)!}x^{2k}
-$$
-
-!!! warning "Needs configuration"
-    Note that MathJax is included via a `script` tag on this page and is not
-    configured in the generated default configuration to avoid including it
-    in a pages that do not need it. See the documentation for details on how
-    to configure it on all your pages if they are more Maths-heavy than these
-    simple starter pages.
-
-## Task Lists
-
-> Go to [documentation](https://zensical.org/docs/authoring/lists/#using-task-lists)
-
-* [x] Install Zensical
-* [x] Configure `zensical.toml`
-* [x] Write amazing documentation
-* [ ] Deploy anywhere
-
-## Tooltips
-
-> Go to [documentation](https://zensical.org/docs/authoring/tooltips/)
-
-[Hover me][example]
-
-  [example]: https://example.com "I'm a tooltip!"
+This project is licensed under the terms in [LICENSE](LICENSE).
