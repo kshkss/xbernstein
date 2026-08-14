@@ -137,6 +137,37 @@ class RationalBernsteinTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be non-negative"):
             curve.deriv(m=-1)
 
+    def test_weight_sensitivity_matches_weight_jacobian(self):
+        values = jnp.array([0.25, -0.5, 1.5])
+        weights = jnp.array([1.0, 3.0, 2.0])
+        parameters = jnp.linspace(0.1, 0.9, 5)
+        curve = RationalBernstein(values, weights)
+
+        actual = curve.weight_sensitivity()
+        expected = jax.jacrev(
+            lambda current_weights: RationalBernstein(values, current_weights)(
+                parameters
+            )
+        )(weights)
+
+        self.assertIsInstance(actual, RationalBernstein)
+        self.assertEqual(actual.shape, (3,))
+        self.assertEqual(actual.order, 4)
+        npt.assert_allclose(
+            jnp.moveaxis(actual(parameters), 0, -1), expected, rtol=3e-5, atol=2e-6
+        )
+        npt.assert_allclose(
+            jnp.sum(weights[:, None] * actual(parameters), axis=0), 0.0, atol=2e-6
+        )
+
+    def test_weight_sensitivity_preserves_batch_axes(self):
+        values = jnp.array([[0.0, 1.0, -0.5], [1.0, 0.5, 2.0]])
+        weights = jnp.array([1.0, 2.0, 4.0])
+        sensitivity = RationalBernstein(values, weights).weight_sensitivity()
+
+        self.assertEqual(sensitivity.shape, (2, 3))
+        self.assertEqual(sensitivity(jnp.array([0.2, 0.7])).shape, (2, 3, 2))
+
     def test_split_reparameterizes_exactly(self):
         curve = RationalBernstein(
             jnp.array([[0.0, 1.0, -0.5], [1.0, 0.5, 2.0]]),
@@ -329,6 +360,41 @@ class RationalTensorBernsteinTest(unittest.TestCase):
                         rtol=2e-5,
                         atol=1e-6,
                     )
+
+    def test_weight_sensitivity_matches_weight_jacobian(self):
+        for rational_type, dimensions, _ in self.cases:
+            with self.subTest(rational_type=rational_type.__name__):
+                values, weights = self.controls(dimensions)
+                parameters = tuple(jnp.linspace(0.2, 0.7, 4) for _ in range(dimensions))
+                function = rational_type(values, weights)
+                actual = function.weight_sensitivity()
+                expected = jax.jacrev(
+                    lambda current_weights: rational_type(values, current_weights)(
+                        *parameters
+                    )
+                )(weights)
+                coefficient_axes = tuple(range(dimensions))
+                target_axes = tuple(
+                    range(actual(*parameters).ndim - dimensions, actual(*parameters).ndim)
+                )
+
+                self.assertIsInstance(actual, rational_type)
+                npt.assert_array_equal(actual.order, 2 * function.order)
+                self.assertEqual(actual.shape, weights.shape)
+                npt.assert_allclose(
+                    jnp.moveaxis(actual(*parameters), coefficient_axes, target_axes),
+                    expected,
+                    rtol=4e-5,
+                    atol=3e-6,
+                )
+                npt.assert_allclose(
+                    jnp.sum(
+                        weights.reshape(weights.shape + (1,)) * actual(*parameters),
+                        axis=coefficient_axes,
+                    ),
+                    0.0,
+                    atol=3e-6,
+                )
 
     def test_split_slice_and_segment(self):
         for rational_type, dimensions, lower_type in self.cases:

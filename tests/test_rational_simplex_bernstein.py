@@ -112,6 +112,38 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
                     atol=2e-6,
                 )
 
+    def test_weight_sensitivity_matches_weight_jacobian(self):
+        for rational_type, dimensions, count, _ in self.cases:
+            with self.subTest(rational_type=rational_type.__name__):
+                values = jnp.arange(count, dtype=jnp.float32) / count
+                weights = jnp.linspace(0.5, 2.0, count)
+                coordinates = tuple(
+                    jnp.full(4, 1.0 / (dimensions + 1))
+                    for _ in range(dimensions + 1)
+                )
+                function = rational_type(values, weights)
+                actual = function.weight_sensitivity()
+                expected = jax.jacrev(
+                    lambda current_weights: rational_type(values, current_weights)(
+                        *coordinates
+                    )
+                )(weights)
+
+                self.assertIsInstance(actual, rational_type)
+                self.assertEqual(actual.shape, (count,))
+                self.assertEqual(actual.order, 2 * function.order)
+                npt.assert_allclose(
+                    jnp.moveaxis(actual(*coordinates), 0, -1),
+                    expected,
+                    rtol=5e-5,
+                    atol=4e-6,
+                )
+                npt.assert_allclose(
+                    jnp.sum(weights[:, None] * actual(*coordinates), axis=0),
+                    0.0,
+                    atol=4e-6,
+                )
+
     def test_segment_is_exact(self):
         for rational_type, dimensions, count, _ in self.cases:
             values = jnp.arange(count, dtype=jnp.float32)
