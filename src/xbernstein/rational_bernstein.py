@@ -398,6 +398,39 @@ class RationalBernstein(eqx.Module):
             result = _from_homogeneous(numerator_coefficients, denominator.c)
         return result
 
+    def weight_sensitivity(self) -> "RationalBernstein":
+        r"""Return the sensitivities to every dehomogenized control weight.
+
+        With control values held fixed, output batch item ``i`` represents
+
+        $$
+        \frac{\partial R}{\partial w_i}
+        = \frac{B_i^n(c_iD-N)}{D^2}.
+        $$
+
+        Thus the result has shape ``self.shape + (n + 1,)`` and degree
+        ``2*n``.  Its final batch axis selects the differentiated weight;
+        evaluation axes follow it as usual.  The denominator is ``D^2`` and
+        therefore retains strictly positive Bernstein coefficients.
+        """
+        count = self.order + 1
+        numerator = self.numerator
+        denominator = self.denominator
+        basis = Bernstein(jnp.eye(count, dtype=self.h.dtype))
+        difference = Bernstein(
+            self.values[..., :, None] * denominator.c[..., None, :]
+            - numerator.c[..., None, :]
+        )
+        sensitivity_numerator = basis * difference
+        sensitivity_denominator = denominator * denominator
+        denominator_coefficients = jnp.broadcast_to(
+            sensitivity_denominator.c[..., None, :],
+            sensitivity_numerator.c.shape,
+        )
+        return _from_homogeneous(
+            sensitivity_numerator.c, denominator_coefficients
+        )
+
     def split(
         self, t: jax.Array | float = jnp.array(0.5)
     ) -> tuple["RationalBernstein", "RationalBernstein"]:

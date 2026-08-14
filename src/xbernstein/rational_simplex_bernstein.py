@@ -395,6 +395,37 @@ class _RationalSimplexBernstein(eqx.Module):
             )
         return result
 
+    def weight_sensitivity(self):
+        r"""Return sensitivities to every packed simplex control weight.
+
+        The added final batch axis selects the differentiated packed
+        coefficient.  With dehomogenized controls fixed, it represents
+
+        $$
+        \frac{\partial R}{\partial w_i}
+        = \frac{B_i(c_iD-N)}{D^2}.
+        $$
+
+        The return type matches ``self`` and has twice the total degree.
+        """
+        count = self.h.shape[-1]
+        numerator = self.numerator
+        denominator = self.denominator
+        basis = self.polynomial_type(jnp.eye(count, dtype=self.h.dtype))
+        difference = self.polynomial_type(
+            self.values[..., :, None] * denominator.c[..., None, :]
+            - numerator.c[..., None, :]
+        )
+        sensitivity_numerator = basis * difference
+        sensitivity_denominator = denominator * denominator
+        denominator_coefficients = jnp.broadcast_to(
+            sensitivity_denominator.c[..., None, :],
+            sensitivity_numerator.c.shape,
+        )
+        return type(self)._from_homogeneous(
+            sensitivity_numerator.c, denominator_coefficients
+        )
+
     def segment(self, start: jax.Array, end: jax.Array) -> RationalBernstein:
         r"""Restrict to the barycentric segment from ``start`` to ``end``."""
         start = jnp.asarray(start, dtype=self.h.dtype)

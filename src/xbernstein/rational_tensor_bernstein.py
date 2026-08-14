@@ -1,6 +1,7 @@
 r"""Positive-weight scalar rational tensor-product Bernstein functions."""
 
 import itertools
+import math
 from typing import ClassVar
 
 import equinox as eqx
@@ -438,6 +439,51 @@ class _RationalTensorBernstein(eqx.Module):
             numerator_coefficients = numerator._elevate(numerator.c, target_degrees)
             result = type(self)._from_homogeneous(numerator_coefficients, denominator.c)
         return result
+
+    def weight_sensitivity(self):
+        r"""Return sensitivities to every tensor-product control weight.
+
+        The returned object represents ``∂R/∂w_i`` for every coefficient
+        multi-index ``i``, with dehomogenized controls held fixed.  Its shape
+        is ``self.shape + coefficient_shape``: the added trailing batch axes
+        select the differentiated coefficient.  Every parameter degree is
+        doubled, because each sensitivity is
+
+        $$
+        \frac{B_{\mathbf i}^{\mathbf n}
+        (c_{\mathbf i}D-N)}{D^2}.
+        $$
+        """
+        dimensions = self.parameter_dimensions
+        coefficient_shape = self.h.shape[-dimensions:]
+        batch_shape = self.shape
+        numerator = self.numerator
+        denominator = self.denominator
+        coefficient_count = math.prod(coefficient_shape)
+        basis_coefficients = jnp.eye(
+            coefficient_count, dtype=self.h.dtype
+        ).reshape(coefficient_shape + coefficient_shape)
+        basis = self.polynomial_type(basis_coefficients)
+        selector_shape = coefficient_shape
+        coefficient_axes = (1,) * dimensions
+        difference = self.polynomial_type(
+            self.values.reshape(batch_shape + selector_shape + coefficient_axes)
+            * denominator.c.reshape(batch_shape + coefficient_axes + coefficient_shape)
+            - numerator.c.reshape(batch_shape + coefficient_axes + coefficient_shape)
+        )
+        sensitivity_numerator = basis * difference
+        sensitivity_denominator = denominator * denominator
+        denominator_coefficients = jnp.broadcast_to(
+            sensitivity_denominator.c.reshape(
+                batch_shape
+                + coefficient_axes
+                + sensitivity_denominator.c.shape[-dimensions:]
+            ),
+            sensitivity_numerator.c.shape,
+        )
+        return type(self)._from_homogeneous(
+            sensitivity_numerator.c, denominator_coefficients
+        )
 
     def split(self, t: jax.Array | float = jnp.array(0.5), axis: int = 0):
         r"""Split along $u_a=\tau$ and reparameterize both pieces.
