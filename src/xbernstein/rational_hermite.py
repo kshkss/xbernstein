@@ -76,14 +76,6 @@ def _subindices(alpha):
     return itertools.product(*(range(order + 1) for order in alpha))
 
 
-def _corner_indices(dimensions: int):
-    strides = tuple(4 ** (dimensions - axis - 1) for axis in range(dimensions))
-    return tuple(
-        sum(index * stride for index, stride in zip(corner, strides))
-        for corner in itertools.product((0, 3), repeat=dimensions)
-    )
-
-
 def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
     coefficient_count = 4**dimensions
     vertices = tuple(itertools.product((0, 1), repeat=dimensions))
@@ -99,22 +91,6 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
         [_derivative_row(beta, vertex, dtype) for vertex, beta in jet_keys]
     )
     coefficient_from_jet = jnp.linalg.inv(jet_matrix)
-    corner_coefficients = _corner_indices(dimensions)
-    noncorner_coefficients = tuple(
-        index
-        for index in range(coefficient_count)
-        if index not in set(corner_coefficients)
-    )
-    noncorner_sum_row = jnp.sum(
-        coefficient_from_jet[jnp.asarray(noncorner_coefficients)], axis=0
-    )
-    normalization_row = jnp.concatenate(
-        [
-            jnp.zeros(coefficient_count, dtype=dtype),
-            noncorner_sum_row[jnp.asarray(derivative_jet_indices)],
-        ]
-    )
-    normalization_rhs = 1.0 - jnp.sum(noncorner_sum_row[jnp.asarray(value_jet_indices)])
     unknown_count = coefficient_count + len(derivative_jet_indices)
     rows = []
     right_hand_sides = []
@@ -160,26 +136,12 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
         matrix,
         right_hand_side,
         coefficient_from_jet,
-        value_jet_indices,
         derivative_jet_indices,
-        normalization_row,
-        normalization_rhs,
     )
 
 
-def _matrix_rank(matrix: jax.Array) -> jax.Array:
-    singular_values = jnp.linalg.svd(matrix, compute_uv=False)
-    tolerance = jnp.finfo(matrix.dtype).eps * jnp.maximum(singular_values[0], 1.0)
-    return jnp.sum(singular_values > tolerance)
-
-
-def _solve_one(
-    matrix: jax.Array,
-    right_hand_side: jax.Array,
-    normalization_row: jax.Array,
-    normalization_rhs: jax.Array,
-):
-    unknown_count = matrix.shape[-1]
+def _solve_subset_one(matrix: jax.Array, right_hand_side: jax.Array):
+    """Return a scaled minimum-norm solution for one axis subset."""
     row_scale = jnp.maximum(
         jnp.max(jnp.abs(matrix), axis=-1),
         jnp.maximum(jnp.abs(right_hand_side), 1.0),
@@ -191,41 +153,48 @@ def _solve_one(
         jnp.finfo(matrix.dtype).eps,
     )
     scaled_matrix = normalized_matrix / column_scale[None, :]
-    rank = _matrix_rank(scaled_matrix)
-    normalization_scale = jnp.maximum(
-        jnp.max(jnp.abs(normalization_row)),
-        jnp.maximum(jnp.abs(normalization_rhs), 1.0),
-    )
-    scaled_normalization = normalization_row / normalization_scale / column_scale
-    augmented_matrix = jnp.concatenate(
-        [scaled_matrix, scaled_normalization[None, :]], axis=0
-    )
-    augmented_rhs = jnp.concatenate(
-        [normalized_rhs, jnp.atleast_1d(normalization_rhs / normalization_scale)]
-    )
-    augmented_rank = _matrix_rank(augmented_matrix)
-
-    def solve_full(_):
-        return jnp.linalg.solve(scaled_matrix, normalized_rhs)
-
-    def solve_augmented(_):
-        return jnp.linalg.lstsq(augmented_matrix, augmented_rhs, rcond=None)[0]
-
-    scaled_solution = jax.lax.cond(
-        rank == unknown_count,
-        solve_full,
-        solve_augmented,
-        operand=None,
-    )
+    scaled_solution = jnp.linalg.lstsq(scaled_matrix, normalized_rhs, rcond=None)[0]
     solution = scaled_solution / column_scale
     residual = normalized_matrix @ solution - normalized_rhs
     residual_tolerance = 10.0 * jnp.sqrt(jnp.finfo(matrix.dtype).eps)
     invalid = (
-        ((rank < unknown_count) & (augmented_rank < unknown_count))
-        | (jnp.max(jnp.abs(residual)) > residual_tolerance)
+        (jnp.max(jnp.abs(residual)) > residual_tolerance)
         | ~jnp.all(jnp.isfinite(solution))
     )
     return solution, invalid
+
+
+def _axis_subsets(dimensions: int):
+    """Yield non-empty coordinate subsets by size and lexicographic order."""
+    for size in range(1, dimensions + 1):
+        yield from itertools.combinations(range(dimensions), size)
+
+
+def _subset_indices(dimensions: int, axes, derivative_jet_indices):
+    """Return rows and unknown columns for exactly one coordinate subset."""
+    vertices = tuple(itertools.product((0, 1), repeat=dimensions))
+    square_free = tuple(itertools.product((0, 1), repeat=dimensions))
+    jet_keys = tuple(itertools.product(vertices, square_free))
+    coefficient_count = len(jet_keys)
+    derivative_columns = {
+        jet_index: coefficient_count + derivative_index
+        for derivative_index, jet_index in enumerate(derivative_jet_indices)
+    }
+    selected = _selected_indices(dimensions)
+    support = tuple(int(axis in axes) for axis in range(dimensions))
+    doubled_support = tuple(2 * order for order in support)
+    rows = []
+    columns = []
+    for vertex_index, _ in enumerate(vertices):
+        row_offset = vertex_index * len(selected)
+        for alpha_index, alpha in enumerate(selected):
+            if alpha == support or alpha == doubled_support:
+                rows.append(row_offset + alpha_index)
+        for beta_index, beta in enumerate(square_free):
+            if beta == support:
+                jet_index = vertex_index * len(square_free) + beta_index
+                columns.extend((jet_index, derivative_columns[jet_index]))
+    return jnp.asarray(rows, dtype=jnp.int32), jnp.asarray(columns, dtype=jnp.int32)
 
 
 def _interpolate(dimensions: int, groups):
@@ -236,26 +205,40 @@ def _interpolate(dimensions: int, groups):
         matrix,
         right_hand_side,
         coefficient_from_jet,
-        value_jet_indices,
         derivative_jet_indices,
-        normalization_row,
-        normalization_rhs,
     ) = _assemble_system(dimensions, derivatives, batch_shape, dtype)
     coefficient_count = 4**dimensions
-    flat_matrix = matrix.reshape((-1,) + matrix.shape[-2:])
-    flat_rhs = right_hand_side.reshape((-1, right_hand_side.shape[-1]))
-    solutions, invalid = jax.vmap(_solve_one, in_axes=(0, 0, None, None))(
-        flat_matrix,
-        flat_rhs,
-        normalization_row,
-        normalization_rhs,
+    solutions = jnp.zeros(batch_shape + (matrix.shape[-1],), dtype=dtype)
+    invalid = jnp.array(False)
+    for axes in _axis_subsets(dimensions):
+        rows, columns = _subset_indices(dimensions, axes, derivative_jet_indices)
+        stage_matrix = jnp.take(jnp.take(matrix, rows, axis=-2), columns, axis=-1)
+        known = jnp.take(matrix, rows, axis=-2) @ solutions[..., None]
+        stage_rhs = right_hand_side[..., rows] - known[..., 0]
+        flat_matrix = stage_matrix.reshape((-1,) + stage_matrix.shape[-2:])
+        flat_rhs = stage_rhs.reshape((-1, stage_rhs.shape[-1]))
+        stage_solutions, stage_invalid = jax.vmap(_solve_subset_one)(
+            flat_matrix, flat_rhs
+        )
+        stage_solutions = stage_solutions.reshape(
+            batch_shape + (stage_solutions.shape[-1],)
+        )
+        solutions = solutions.at[..., columns].set(stage_solutions)
+        invalid = invalid | jnp.any(stage_invalid)
+    full_residual = matrix @ solutions[..., None] - right_hand_side[..., None]
+    full_scale = jnp.maximum(
+        jnp.max(jnp.abs(matrix), axis=-1),
+        jnp.maximum(jnp.abs(right_hand_side), 1.0),
+    )
+    invalid = invalid | jnp.any(
+        jnp.abs(full_residual[..., 0]) / full_scale
+        > 10.0 * jnp.sqrt(jnp.finfo(dtype).eps)
     )
     solutions = eqx.error_if(
         solutions,
-        jnp.any(invalid),
-        "rational Hermite interpolation system is singular or inconsistent",
+        invalid,
+        "rational Hermite interpolation stage is inconsistent",
     )
-    solutions = solutions.reshape(batch_shape + (solutions.shape[-1],))
 
     numerator_jets = solutions[..., :coefficient_count]
     denominator_jets = jnp.ones(batch_shape + (coefficient_count,), dtype=dtype)
@@ -318,8 +301,9 @@ def rational_hermite_interpolate_1d(f, d1, d2):
     **Inputs:** ``f[...,v_x]=f(v_x)``,
     ``d1[...,v_x]=f_x(v_x)``, and ``d2[...,v_x]=f_xx(v_x)``; all have shape
     ``(*batch,2)``. Each leading batch item is solved independently.
-    **Returns:** ``rpoly.order == 3``. A singular or inconsistent system, or
-    any non-positive reconstructed denominator weight, raises an error.
+    **Returns:** ``rpoly.order == 3``. The rank-deficient stage, if any, uses
+    a scaled minimum-norm solution. An inconsistent stage or any non-positive
+    reconstructed denominator weight raises an error.
     """
     return _interpolate(1, (f, d1, d2))
 
@@ -382,8 +366,11 @@ def rational_hermite_interpolate_2d(f, d1, d2, d3, d4):
     ``d3[...,v_x,v_y,0/1]=(f_xxy,f_xyy)``, and
     ``d4[...,v_x,v_y]=f_xxyy``. Each leading batch item is solved
     independently.
-    **Returns:** ``rpoly.order == [3,3]``. A singular or inconsistent system,
-    or any non-positive reconstructed weight, raises an error.
+    The solver fixes the ``x`` and ``y`` terms independently, then the
+    ``xy`` crossing terms. Rank-deficient subset systems use scaled
+    minimum-norm solutions.
+    **Returns:** ``rpoly.order == [3,3]``. An inconsistent stage or any
+    non-positive reconstructed weight raises an error.
     """
     return _interpolate(2, (f, d1, d2, d3, d4))
 
@@ -447,8 +434,10 @@ def rational_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
     ``d5[...,v_x,v_y,v_z,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
     ``d6[...,v_x,v_y,v_z]=f_xxyyzz``. Derivative-kind counts are
     ``3,6,7,6,3,1``. Each leading batch item is solved independently.
-    **Returns:** ``rpoly.order == [3,3,3]``. A singular or inconsistent
-    system, or any non-positive reconstructed weight, raises an error.
+    Terms are solved independently for each axis subset, ordered by subset
+    size; rank-deficient subset systems use scaled minimum-norm solutions.
+    **Returns:** ``rpoly.order == [3,3,3]``. An inconsistent stage or any
+    non-positive reconstructed weight raises an error.
     """
     return _interpolate(3, (f, d1, d2, d3, d4, d5, d6))
 
@@ -514,7 +503,9 @@ def rational_hermite_interpolate_4d(f, d1, d2, d3, d4, d5, d6, d7, d8):
     and ``d8[...,v_x,v_y,v_z,v_w]=f_xxyyzzww``. Derivative-kind counts are
     ``4,10,16,19,16,10,4,1``. Each leading batch item is solved
     independently.
-    **Returns:** ``rpoly.order == [3,3,3,3]``. A singular or inconsistent
-    system, or any non-positive reconstructed weight, raises an error.
+    Terms are solved independently for each axis subset, ordered by subset
+    size; a rank-deficient subset system uses a scaled minimum-norm solution.
+    **Returns:** ``rpoly.order == [3,3,3,3]``. An inconsistent stage or any
+    non-positive reconstructed weight raises an error.
     """
     return _interpolate(4, (f, d1, d2, d3, d4, d5, d6, d7, d8))
