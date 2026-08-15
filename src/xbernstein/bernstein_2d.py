@@ -1,17 +1,23 @@
 from typing import ClassVar
 
 import jax
+from jaxtyping import Float
 
 from ._tensor_bernstein import _TensorBernstein, _tensor_minimize, _tensor_minimize_jvp
 
 
 @jax.custom_jvp
-def _minimize(coefficients, max_steps: int = 200, eps: float = 1e-6):
+def _minimize(
+    coefficients: Float[jax.Array, "..."], max_steps: int = 200, eps: float = 1e-6
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]:
     return _tensor_minimize(coefficients, max_steps, eps)
 
 
 @_minimize.defjvp
-def _minimize_jvp(primals, tangents):
+def _minimize_jvp(
+    primals: tuple[Float[jax.Array, "..."], int, float],
+    tangents: tuple[Float[jax.Array, "..."], int, float],
+) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]], tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]]:
     coefficients, max_steps, eps = primals
     tangent_coefficients, _, _ = tangents
     return _tensor_minimize_jvp(coefficients, tangent_coefficients, max_steps, eps)

@@ -9,14 +9,19 @@ from .bernstein import Bernstein, _elevate
 
 
 def _from_homogeneous(
-    numerator: jax.Array, denominator: jax.Array
+    numerator: Float[jax.Array, "*batch order"],
+    denominator: Float[jax.Array, "*batch order"],
 ) -> "RationalBernstein":
     result = object.__new__(RationalBernstein)
     object.__setattr__(result, "h", jnp.stack((numerator, denominator), axis=-2))
     return result
 
 
-def _split_homogeneous(h: jax.Array, t: jax.Array | float):
+def _split_homogeneous(
+    h: Float[jax.Array, "*batch 2 order"], t: Float[jax.Array, "..."] | float
+) -> tuple[
+    Float[jax.Array, "*batch 2 order"], Float[jax.Array, "*batch 2 order"]
+]:
     t = jnp.asarray(t, dtype=h.dtype)
     t = jnp.broadcast_to(t, h.shape[:-2])
     weight = t[..., None, None]
@@ -30,7 +35,9 @@ def _split_homogeneous(h: jax.Array, t: jax.Array | float):
     return jnp.stack(left, axis=-1), jnp.stack(right[::-1], axis=-1)
 
 
-def _evaluate_homogeneous(h: jax.Array, t: jax.Array):
+def _evaluate_homogeneous(
+    h: Float[jax.Array, "*batch 2 order"], t: Float[jax.Array, "..."]
+) -> Float[jax.Array, "..."]:
     numerator = Bernstein(h[..., 0, :])(t)
     denominator = Bernstein(h[..., 1, :])(t)
     return numerator / denominator
@@ -136,7 +143,11 @@ class RationalBernstein(eqx.Module):
 
     h: Float[jax.Array, "*batch 2 order"]
 
-    def __init__(self, values, weights):
+    def __init__(
+        self,
+        values: Float[jax.Array, "*value_batch order"],
+        weights: Float[jax.Array, "*weight_batch order"],
+    ):
         r"""Initialize control values $c_i$ and strictly positive weights $w_i$.
 
         The inputs have shapes ``(*value_batch, n + 1)`` and
@@ -171,7 +182,7 @@ class RationalBernstein(eqx.Module):
         self.h = jnp.stack((weights * values, weights), axis=-2)
 
     @property
-    def values(self) -> jax.Array:
+    def values(self) -> Float[jax.Array, "*batch order"]:
         r"""Return the dehomogenized control values $c_i$.
 
         The homogeneous components satisfy
@@ -185,7 +196,7 @@ class RationalBernstein(eqx.Module):
         return self.h[..., 0, :] / self.h[..., 1, :]
 
     @property
-    def weights(self) -> jax.Array:
+    def weights(self) -> Float[jax.Array, "*batch order"]:
         r"""Return the strictly positive rational weights $w_i=h_{1,i}$.
 
         The returned shape is ``(*batch, n + 1)`` and every entry is positive,
@@ -194,7 +205,7 @@ class RationalBernstein(eqx.Module):
         return self.h[..., 1, :]
 
     @property
-    def c(self) -> jax.Array:
+    def c(self) -> Float[jax.Array, "*batch order"]:
         r"""Return the control values $c_i$ as an alias of :attr:`values`.
 
         This name matches the coefficient notation used by :class:`Bernstein`;
@@ -204,7 +215,7 @@ class RationalBernstein(eqx.Module):
         return self.values
 
     @property
-    def w(self) -> jax.Array:
+    def w(self) -> Float[jax.Array, "*batch order"]:
         r"""Return the positive weights $w_i$ as an alias of :attr:`weights`."""
         return self.weights
 
@@ -260,7 +271,9 @@ class RationalBernstein(eqx.Module):
         """
         return Bernstein(self.h[..., 1, :])
 
-    def __call__(self, t):
+    def __call__(
+        self, t: Float[jax.Array, "..."] | float
+    ) -> Float[jax.Array, "..."]:
         r"""Evaluate $R(t)=N(t)/D(t)$.
 
         Both $N$ and $D$ are evaluated by the Bernstein De Casteljau
@@ -432,7 +445,7 @@ class RationalBernstein(eqx.Module):
         )
 
     def split(
-        self, t: jax.Array | float = jnp.array(0.5)
+        self, t: Float[jax.Array, "..."] | float = jnp.array(0.5)
     ) -> tuple["RationalBernstein", "RationalBernstein"]:
         r"""Split at $t=\tau$ and reparameterize both pieces to $[0,1]$.
 
@@ -474,7 +487,9 @@ class RationalBernstein(eqx.Module):
 
 
 @jax.custom_jvp
-def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
+def _minimize(
+    h: Float[jax.Array, "*batch 2 order"], max_steps: int = 200, eps: float = 1e-6
+) -> tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]]:
     """Approximate the minimum of one unbatched positive-weight curve."""
     max_cap = max_steps + 1
     degree = h.shape[-1] - 1
@@ -538,7 +553,10 @@ def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
 
 
 @_minimize.defjvp
-def _minimize_jvp(primals, tangents):
+def _minimize_jvp(
+    primals: tuple[Float[jax.Array, "*batch 2 order"], int, float],
+    tangents: tuple[Float[jax.Array, "*batch 2 order"], int, float],
+) -> tuple[tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]], tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]]]:
     h, max_steps, eps = primals
     tangent_h, _, _ = tangents
     primal = _minimize(h, max_steps=max_steps, eps=eps)

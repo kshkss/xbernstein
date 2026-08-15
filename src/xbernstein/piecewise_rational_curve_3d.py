@@ -3,16 +3,21 @@ r"""Piecewise G² cubic rational Bernstein curves in three dimensions."""
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Float
 
 from .rational_bernstein import RationalBernstein
 
 
-def _orthogonal(vector: jax.Array, tangent: jax.Array) -> jax.Array:
+def _orthogonal(
+    vector: Float[jax.Array, "3"], tangent: Float[jax.Array, "3"]
+) -> Float[jax.Array, "3"]:
     """Return the component of ``vector`` normal to the unit ``tangent``."""
     return vector - jnp.dot(vector, tangent) * tangent
 
 
-def _solve_two_columns(matrix: jax.Array, rhs: jax.Array) -> tuple[jax.Array, jax.Array]:
+def _solve_two_columns(
+    matrix: Float[jax.Array, "3 2"], rhs: Float[jax.Array, "3"]
+) -> tuple[Float[jax.Array, "2"], Float[jax.Array, "3"]]:
     """Solve a possibly overdetermined two-column system and return its residual."""
     solution = jnp.linalg.lstsq(matrix, rhs, rcond=None)[0]
     return solution, matrix @ solution - rhs
@@ -32,11 +37,16 @@ class PiecewiseRationalCurve3D(eqx.Module):
     therefore evaluates to a point with shape ``(3,)``.
     """
 
-    positions: jax.Array
-    tangents: jax.Array
-    curvatures: jax.Array
+    positions: Float[jax.Array, "nodes 3"]
+    tangents: Float[jax.Array, "nodes 3"]
+    curvatures: Float[jax.Array, "nodes 3"]
 
-    def __init__(self, positions, tangents, curvatures):
+    def __init__(
+        self,
+        positions: Float[jax.Array, "nodes 3"],
+        tangents: Float[jax.Array, "nodes 3"],
+        curvatures: Float[jax.Array, "nodes 3"],
+    ):
         groups = tuple(jnp.asarray(group) for group in (positions, tangents, curvatures))
         if any(group.ndim != 2 or group.shape[1] != 3 for group in groups):
             raise ValueError(
@@ -84,7 +94,7 @@ class PiecewiseRationalCurve3D(eqx.Module):
         """Return the scalar dtype used by the node data."""
         return str(self.positions.dtype)
 
-    def interpolant(self, segment_index) -> RationalBernstein:
+    def interpolant(self, segment_index: int) -> RationalBernstein:
         r"""Return the G² cubic rational Bernstein interpolant for one interval.
 
         The endpoint weights are normalized to one.  The two interior control
@@ -168,7 +178,9 @@ class PiecewiseRationalCurve3D(eqx.Module):
         )
         return RationalBernstein(values, weights)
 
-    def translated(self, offset) -> "PiecewiseRationalCurve3D":
+    def translated(
+        self, offset: Float[jax.Array, "3"]
+    ) -> "PiecewiseRationalCurve3D":
         """Return a copy translated by the three-dimensional ``offset``."""
         offset = jnp.asarray(offset, dtype=self.positions.dtype)
         if offset.shape != (3,):

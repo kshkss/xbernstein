@@ -7,7 +7,7 @@ from typing import ClassVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from ._tensor_bernstein import (
     _evaluate_tensor_coefficients,
@@ -19,7 +19,9 @@ from .bernstein_4d import Bernstein4D
 from .rational_bernstein import RationalBernstein, _from_homogeneous
 
 
-def _homogeneous_component(h: jax.Array, dimensions: int, index: int) -> jax.Array:
+def _homogeneous_component(
+    h: Float[jax.Array, "..."], dimensions: int, index: int
+) -> Float[jax.Array, "..."]:
     return jnp.take(h, index, axis=-(dimensions + 1))
 
 
@@ -140,7 +142,11 @@ class _RationalTensorBernstein(eqx.Module):
     parameter_dimensions: ClassVar[int]
     polynomial_type: ClassVar[type]
 
-    def __init__(self, values, weights):
+    def __init__(
+        self,
+        values: Float[jax.Array, "..."],
+        weights: Float[jax.Array, "..."],
+    ):
         r"""Initialize control values $c_{\mathbf{i}}$ and weights $w_{\mathbf{i}}$.
 
         The final ``parameter_dimensions`` axes of both inputs are the
@@ -179,14 +185,18 @@ class _RationalTensorBernstein(eqx.Module):
         self.h = jnp.stack((weights * values, weights), axis=-(dimensions + 1))
 
     @classmethod
-    def _from_homogeneous(cls, numerator: jax.Array, denominator: jax.Array):
+    def _from_homogeneous(
+        cls,
+        numerator: Float[jax.Array, "..."],
+        denominator: Float[jax.Array, "..."],
+    ):
         result = object.__new__(cls)
         axis = -(cls.parameter_dimensions + 1)
         object.__setattr__(result, "h", jnp.stack((numerator, denominator), axis=axis))
         return result
 
     @property
-    def values(self) -> jax.Array:
+    def values(self) -> Float[jax.Array, "..."]:
         r"""Return the dehomogenized controls $c_{\mathbf{i}}$.
 
         They are recovered componentwise from
@@ -202,7 +212,7 @@ class _RationalTensorBernstein(eqx.Module):
         return self.numerator.c / self.denominator.c
 
     @property
-    def weights(self) -> jax.Array:
+    def weights(self) -> Float[jax.Array, "..."]:
         r"""Return the positive weights $w_{\mathbf{i}}=h_{1,\mathbf{i}}$.
 
         Their shape matches :attr:`values`, and positivity guarantees
@@ -211,7 +221,7 @@ class _RationalTensorBernstein(eqx.Module):
         return self.denominator.c
 
     @property
-    def c(self) -> jax.Array:
+    def c(self) -> Float[jax.Array, "..."]:
         r"""Return $c_{\mathbf{i}}$ as an alias of :attr:`values`.
 
         These are dehomogenized controls, not the numerator coefficients
@@ -220,7 +230,7 @@ class _RationalTensorBernstein(eqx.Module):
         return self.values
 
     @property
-    def w(self) -> jax.Array:
+    def w(self) -> Float[jax.Array, "..."]:
         r"""Return $w_{\mathbf{i}}$ as an alias of :attr:`weights`."""
         return self.weights
 
@@ -234,7 +244,7 @@ class _RationalTensorBernstein(eqx.Module):
         return self.h.shape[: -(self.parameter_dimensions + 1)]
 
     @property
-    def order(self) -> jax.Array:
+    def order(self) -> Int[jax.Array, "dim"]:
         r"""Return the degree vector $\mathbf{n}=(n_0,\ldots,n_{d-1})$.
 
         If the final coefficient axes have lengths
@@ -287,7 +297,9 @@ class _RationalTensorBernstein(eqx.Module):
             _homogeneous_component(self.h, self.parameter_dimensions, 1)
         )
 
-    def __call__(self, *ts):
+    def __call__(
+        self, *ts: Float[jax.Array, "..."]
+    ) -> Float[jax.Array, "..."]:
         r"""Evaluate $R(\mathbf{u})=N(\mathbf{u})/D(\mathbf{u})$.
 
         ``ts`` supplies exactly one coordinate array for each component
@@ -440,7 +452,7 @@ class _RationalTensorBernstein(eqx.Module):
             result = type(self)._from_homogeneous(numerator_coefficients, denominator.c)
         return result
 
-    def weight_sensitivity(self):
+    def weight_sensitivity(self) -> "_RationalTensorBernstein":
         r"""Return sensitivities to every tensor-product control weight.
 
         The returned object represents ``∂R/∂w_i`` for every coefficient
@@ -485,7 +497,9 @@ class _RationalTensorBernstein(eqx.Module):
             sensitivity_numerator.c, denominator_coefficients
         )
 
-    def split(self, t: jax.Array | float = jnp.array(0.5), axis: int = 0):
+    def split(
+        self, t: Float[jax.Array, "..."] | float = jnp.array(0.5), axis: int = 0
+    ):
         r"""Split along $u_a=\tau$ and reparameterize both pieces.
 
         With $a=$ ``axis`` and a new coordinate $s\in[0,1]$, the first result
@@ -534,7 +548,11 @@ class _RationalTensorBernstein(eqx.Module):
             type(self)._from_homogeneous(numerator_right.c, denominator_right.c),
         )
 
-    def _lower_dimension(self, numerator: jax.Array, denominator: jax.Array):
+    def _lower_dimension(
+        self,
+        numerator: Float[jax.Array, "..."],
+        denominator: Float[jax.Array, "..."],
+    ):
         if self.parameter_dimensions == 2:
             return _from_homogeneous(numerator, denominator)
         if self.parameter_dimensions == 3:
@@ -543,7 +561,7 @@ class _RationalTensorBernstein(eqx.Module):
             return RationalBernstein3D._from_homogeneous(numerator, denominator)
         raise RuntimeError("rational tensor functions require at least 2 dimensions")
 
-    def slice(self, value: jax.Array | float, axis: int = 0):
+    def slice(self, value: Float[jax.Array, "..."] | float, axis: int = 0):
         r"""Restrict to the coordinate hyperplane $u_a=v$.
 
         For $a=$ ``axis`` and $v=$ ``value``, the returned function is
@@ -584,7 +602,11 @@ class _RationalTensorBernstein(eqx.Module):
         denominator = self.denominator.slice(value=value, axis=axis)
         return self._lower_dimension(numerator.c, denominator.c)
 
-    def segment(self, start: jax.Array, end: jax.Array) -> RationalBernstein:
+    def segment(
+        self,
+        start: Float[jax.Array, "..."],
+        end: Float[jax.Array, "..."],
+    ) -> RationalBernstein:
         r"""Restrict $R$ to the affine segment from ``start`` to ``end``.
 
         For endpoints $\mathbf{a}$ and $\mathbf{b}$, the returned
@@ -652,7 +674,7 @@ class RationalBernstein2D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 2
     polynomial_type: ClassVar[type] = Bernstein2D
 
-    def __init__(self, values, weights):
+    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
         """Initialize 2D control values and strictly positive weights."""
         super().__init__(values, weights)
 
@@ -680,7 +702,7 @@ class RationalBernstein3D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 3
     polynomial_type: ClassVar[type] = Bernstein3D
 
-    def __init__(self, values, weights):
+    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
         """Initialize 3D control values and strictly positive weights."""
         super().__init__(values, weights)
 
@@ -707,20 +729,22 @@ class RationalBernstein4D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 4
     polynomial_type: ClassVar[type] = Bernstein4D
 
-    def __init__(self, values, weights):
+    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
         """Initialize 4D control values and strictly positive weights."""
         super().__init__(values, weights)
 
 
-def _evaluate_rational_tensor(h: jax.Array, point: jax.Array) -> jax.Array:
+def _evaluate_rational_tensor(
+    h: Float[jax.Array, "..."], point: Float[jax.Array, "..."]
+) -> Float[jax.Array, "..."]:
     numerator = _evaluate_tensor_coefficients(h[0], point)
     denominator = _evaluate_tensor_coefficients(h[1], point)
     return numerator / denominator
 
 
 def _split_rational_tensor(
-    h: jax.Array, axis: jax.Array
-) -> tuple[jax.Array, jax.Array]:
+    h: Float[jax.Array, "..."], axis: Int[jax.Array, ""]
+) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
     numerator_left, numerator_right = _split_tensor_coefficients(h[0], axis)
     denominator_left, denominator_right = _split_tensor_coefficients(h[1], axis)
     return (
@@ -730,7 +754,9 @@ def _split_rational_tensor(
 
 
 @jax.custom_jvp
-def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
+def _minimize(
+    h: Float[jax.Array, "..."], max_steps: int = 200, eps: float = 1e-6
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]:
     """Globally minimize one unbatched positive-weight rational tensor."""
     dimensions = h.ndim - 1
     capacity = max_steps + 1
@@ -798,7 +824,10 @@ def _minimize(h: jax.Array, max_steps: int = 200, eps: float = 1e-6):
 
 
 @_minimize.defjvp
-def _minimize_jvp(primals, tangents):
+def _minimize_jvp(
+    primals: tuple[Float[jax.Array, "..."], int, float],
+    tangents: tuple[Float[jax.Array, "..."], int, float],
+) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]], tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]]:
     h, max_steps, eps = primals
     tangent_h, _, _ = tangents
     primal = _minimize(h, max_steps=max_steps, eps=eps)

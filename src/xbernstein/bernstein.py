@@ -51,7 +51,9 @@ import equinox as eqx
 from typing import Self
 
 
-def _elevate(c: jax.Array, target_n: int) -> jax.Array:
+def _elevate(
+    c: Float[jax.Array, "*batch order"], target_n: int
+) -> Float[jax.Array, "*batch elevated_order"]:
     r"""Represent $p$ in the Bernstein basis of degree $N=$ ``target_n``.
 
     If $p$ initially has degree $n$, degree elevation preserves the function
@@ -344,7 +346,7 @@ class Bernstein(eqx.Module):
         )
         return type(self)(c_new)
 
-    def __call__(self, t: Float[jax.Array, " k"]) -> Float[jax.Array, "*batch k"]:
+    def __call__(self, t: Float[jax.Array, "k"]) -> Float[jax.Array, "*batch k"]:
         r"""Evaluate $p(t)$ with the De Casteljau recurrence.
 
         Starting from $c_i^{(0)}=c_i$, each reduction level is

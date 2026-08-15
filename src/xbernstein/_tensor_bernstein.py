@@ -55,8 +55,8 @@ from .bernstein import Bernstein
 
 
 def _evaluate_tensor_coefficients(
-    coefficients: jax.Array, point: jax.Array
-) -> jax.Array:
+    coefficients: Float[jax.Array, "..."], point: Float[jax.Array, "..."]
+) -> Float[jax.Array, "..."]:
     """Evaluate an unbatched tensor Bernstein control array at one point."""
     w = coefficients
     for axis in range(point.shape[0] - 1, -1, -1):
@@ -68,13 +68,13 @@ def _evaluate_tensor_coefficients(
 
 
 def _split_tensor_coefficients(
-    coefficients: jax.Array, axis: jax.Array
-) -> tuple[jax.Array, jax.Array]:
+    coefficients: Float[jax.Array, "..."], axis: Int[jax.Array, ""]
+) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
     """Bisect one dynamically selected tensor parameter axis at one half."""
     dimensions = coefficients.ndim
 
     def branch(selected_axis: int):
-        def split(c: jax.Array) -> tuple[jax.Array, jax.Array]:
+        def split(c: Float[jax.Array, "..."]) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
             w = jnp.moveaxis(c, selected_axis, -1)
             left, right = [w[..., 0]], [w[..., -1]]
             for _ in range(w.shape[-1] - 1):
@@ -93,7 +93,9 @@ def _split_tensor_coefficients(
     )
 
 
-def _tensor_derivative(coefficients: jax.Array, axis: int) -> jax.Array:
+def _tensor_derivative(
+    coefficients: Float[jax.Array, "..."], axis: int
+) -> Float[jax.Array, "..."]:
     """Differentiate an unbatched tensor Bernstein control array once."""
     w = jnp.moveaxis(coefficients, axis, -1)
     degree = w.shape[-1] - 1
@@ -105,8 +107,8 @@ def _tensor_derivative(coefficients: jax.Array, axis: int) -> jax.Array:
 
 
 def _tensor_minimize(
-    coefficients: jax.Array, max_steps: int, eps: float
-) -> tuple[jax.Array, jax.Array]:
+    coefficients: Float[jax.Array, "..."], max_steps: int, eps: float
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]:
     """Globally minimize one tensor Bernstein polynomial by box subdivision."""
     dimensions = coefficients.ndim
     capacity = max_steps + 1
@@ -172,8 +174,14 @@ def _tensor_minimize(
 
 
 def _tensor_minimize_jvp(
-    coefficients: jax.Array, tangent_coefficients: jax.Array, max_steps: int, eps: float
-) -> tuple[tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+    coefficients: Float[jax.Array, "..."],
+    tangent_coefficients: Float[jax.Array, "..."],
+    max_steps: int,
+    eps: float,
+) -> tuple[
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+]:
     """Apply envelope and implicit-differentiation rules to tensor minimization."""
     primal = _tensor_minimize(coefficients, max_steps, eps)
     value, point = primal
@@ -327,7 +335,7 @@ class _TensorBernstein(eqx.Module):
             )
         return self.c.ndim - self.parameter_dimensions + axis
 
-    def _lower_dimension(self, coefficients: jax.Array):
+    def _lower_dimension(self, coefficients: Float[jax.Array, "..."]):
         r"""Construct the Bernstein representation after removing one $u_a$ factor.
 
         The input coefficients retain their original order except that one
@@ -346,7 +354,9 @@ class _TensorBernstein(eqx.Module):
             return Bernstein3D(coefficients)
         raise RuntimeError("tensor Bernstein polynomials require at least 2 dimensions")
 
-    def _elevate_axis(self, c: jax.Array, axis: int, target_degree: int) -> jax.Array:
+    def _elevate_axis(
+        self, c: Float[jax.Array, "..."], axis: int, target_degree: int
+    ) -> Float[jax.Array, "..."]:
         r"""Elevate degree $n_a$ to ``target_degree`` along one parameter $u_a$.
 
         The represented function $p(\mathbf{u})$ is unchanged. For the
@@ -372,7 +382,9 @@ class _TensorBernstein(eqx.Module):
 
         return jnp.moveaxis(w, -1, axis_index)
 
-    def _elevate(self, c: jax.Array, target_degrees: tuple[int, ...]) -> jax.Array:
+    def _elevate(
+        self, c: Float[jax.Array, "..."], target_degrees: tuple[int, ...]
+    ) -> Float[jax.Array, "..."]:
         r"""Elevate $p$ to the degree vector $\mathbf{N}$ without changing $p(\mathbf{u})$.
 
         Applies :meth:`_elevate_axis` independently to each component
@@ -383,12 +395,14 @@ class _TensorBernstein(eqx.Module):
         return c
 
     def _broadcast_coefficients(
-        self, c: jax.Array, batch_shape: tuple[int, ...], degree_shape: tuple[int, ...]
-    ) -> jax.Array:
+        self, c: Float[jax.Array, "..."], batch_shape: tuple[int, ...], degree_shape: tuple[int, ...]
+    ) -> Float[jax.Array, "..."]:
         """Broadcast $c_{\mathbf{i}}$ over leading axes without changing its basis axes."""
         return jnp.broadcast_to(c, batch_shape + degree_shape)
 
-    def _aligned_coefficients(self, other: Self) -> tuple[jax.Array, jax.Array]:
+    def _aligned_coefficients(
+        self, other: Self
+    ) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
         r"""Represent $p$ and $q$ in their shared degree vector before addition.
 
         The $a$-th common degree is $N_a=\max(n_a,m_a)$. Degree elevation
@@ -593,7 +607,7 @@ class _TensorBernstein(eqx.Module):
         )
         return type(self)(jnp.moveaxis(integrated, -1, axis_index))
 
-    def __call__(self, *ts: Float[jax.Array, "..."]) -> jax.Array:
+    def __call__(self, *ts: Float[jax.Array, "..."]) -> Float[jax.Array, "..."]:
         r"""Evaluate $p(\mathbf{u})$ at ``(u_0, ..., u_{d-1})``.
 
         For each coordinate $u_a$, De Casteljau repeatedly replaces adjacent

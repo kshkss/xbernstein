@@ -6,6 +6,7 @@ import math
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Bool, Float, Int
 
 from .hermite import _multi_indices, _validate_groups
 from .rational_bernstein import RationalBernstein
@@ -18,7 +19,7 @@ from .rational_tensor_bernstein import (
 
 def _univariate_derivative_row(
     derivative_order: int, endpoint: int, dtype
-) -> jax.Array:
+) -> Float[jax.Array, "4"]:
     degree = 3
     row = jnp.zeros(degree + 1, dtype=dtype)
     scale = math.factorial(degree) / math.factorial(degree - derivative_order)
@@ -33,7 +34,9 @@ def _univariate_derivative_row(
     return row
 
 
-def _derivative_row(alpha, vertex, dtype) -> jax.Array:
+def _derivative_row(
+    alpha: tuple[int, ...], vertex: tuple[int, ...], dtype
+) -> Float[jax.Array, "n"]:
     row = jnp.ones(1, dtype=dtype)
     for derivative_order, endpoint in zip(alpha, vertex):
         row = jnp.kron(
@@ -43,7 +46,9 @@ def _derivative_row(alpha, vertex, dtype) -> jax.Array:
     return row
 
 
-def _unpack_derivatives(dimensions: int, values):
+def _unpack_derivatives(
+    dimensions: int, values: tuple[Float[jax.Array, "..."] , ...]
+) -> dict[tuple[int, ...], Float[jax.Array, "..."]]:
     derivatives = {}
     for total, group in enumerate(values):
         indices = _multi_indices(dimensions, 3, total)
@@ -57,7 +62,7 @@ def _unpack_derivatives(dimensions: int, values):
     return derivatives
 
 
-def _selected_indices(dimensions: int):
+def _selected_indices(dimensions: int) -> tuple[tuple[int, ...], ...]:
     square_free = tuple(itertools.product((0, 1), repeat=dimensions))
     doubled = tuple(
         alpha for alpha in itertools.product((0, 2), repeat=dimensions) if any(alpha)
@@ -65,18 +70,23 @@ def _selected_indices(dimensions: int):
     return square_free + doubled
 
 
-def _multi_binomial(alpha, gamma):
+def _multi_binomial(alpha: tuple[int, ...], gamma: tuple[int, ...]) -> int:
     result = 1
     for upper, lower in zip(alpha, gamma):
         result *= math.comb(upper, lower)
     return result
 
 
-def _subindices(alpha):
+def _subindices(alpha: tuple[int, ...]):
     return itertools.product(*(range(order + 1) for order in alpha))
 
 
-def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
+def _assemble_system(
+    dimensions: int,
+    derivatives: dict[tuple[int, ...], Float[jax.Array, "..."]],
+    batch_shape: tuple[int, ...],
+    dtype,
+) -> tuple[jax.Array, jax.Array, jax.Array, tuple[int, ...], tuple[int, ...]]:
     coefficient_count = 4**dimensions
     vertices = tuple(itertools.product((0, 1), repeat=dimensions))
     square_free = tuple(itertools.product((0, 1), repeat=dimensions))
@@ -141,7 +151,10 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
     )
 
 
-def _solve_subset_one(matrix: jax.Array, right_hand_side: jax.Array):
+def _solve_subset_one(
+    matrix: Float[jax.Array, "rows columns"],
+    right_hand_side: Float[jax.Array, "rows"],
+) -> tuple[Float[jax.Array, "columns"], Bool[jax.Array, ""]]:
     """Return a scaled minimum-norm solution for one axis subset."""
     row_scale = jnp.maximum(
         jnp.max(jnp.abs(matrix), axis=-1),
@@ -188,7 +201,9 @@ def _axis_subsets(dimensions: int):
         yield from itertools.combinations(range(dimensions), size)
 
 
-def _subset_indices(dimensions: int, axes, derivative_jet_indices):
+def _subset_indices(
+    dimensions: int, axes: tuple[int, ...], derivative_jet_indices: tuple[int, ...]
+) -> tuple[Int[jax.Array, "rows"], Int[jax.Array, "columns"]]:
     """Return rows and unknown columns for exactly one coordinate subset."""
     vertices = tuple(itertools.product((0, 1), repeat=dimensions))
     square_free = tuple(itertools.product((0, 1), repeat=dimensions))
@@ -215,7 +230,9 @@ def _subset_indices(dimensions: int, axes, derivative_jet_indices):
     return jnp.asarray(rows, dtype=jnp.int32), jnp.asarray(columns, dtype=jnp.int32)
 
 
-def _interpolate(dimensions: int, groups):
+def _interpolate(
+    dimensions: int, groups: tuple[Float[jax.Array, "..."], ...]
+) -> RationalBernstein | RationalBernstein2D | RationalBernstein3D | RationalBernstein4D:
     values, batch_shape = _validate_groups(dimensions, 5, groups)
     derivatives = _unpack_derivatives(dimensions, values)
     dtype = values[0].dtype
@@ -288,7 +305,11 @@ def _interpolate(dimensions: int, groups):
     raise ValueError(f"unsupported dimension: {dimensions}")
 
 
-def rational_hermite_interpolate_1d(f, d1, d2):
+def rational_hermite_interpolate_1d(
+    f: Float[jax.Array, "*batch 2"],
+    d1: Float[jax.Array, "*batch 2"],
+    d2: Float[jax.Array, "*batch 2"],
+) -> RationalBernstein:
     r"""Interpolate endpoint values through second derivatives by a cubic rational.
 
     The result has the form
@@ -329,7 +350,13 @@ def rational_hermite_interpolate_1d(f, d1, d2):
     return _interpolate(1, (f, d1, d2))
 
 
-def rational_hermite_interpolate_2d(f, d1, d2, d3, d4):
+def rational_hermite_interpolate_2d(
+    f: Float[jax.Array, "*batch 2 2"],
+    d1: Float[jax.Array, "*batch 2 2 2"],
+    d2: Float[jax.Array, "*batch 2 2 3"],
+    d3: Float[jax.Array, "*batch 2 2 2"],
+    d4: Float[jax.Array, "*batch 2 2"],
+) -> RationalBernstein2D:
     r"""Interpolate selected vertex derivatives by a bicubic rational function.
 
     The result is
@@ -396,7 +423,15 @@ def rational_hermite_interpolate_2d(f, d1, d2, d3, d4):
     return _interpolate(2, (f, d1, d2, d3, d4))
 
 
-def rational_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
+def rational_hermite_interpolate_3d(
+    f: Float[jax.Array, "*batch 2 2 2"],
+    d1: Float[jax.Array, "*batch 2 2 2 3"],
+    d2: Float[jax.Array, "*batch 2 2 2 6"],
+    d3: Float[jax.Array, "*batch 2 2 2 7"],
+    d4: Float[jax.Array, "*batch 2 2 2 6"],
+    d5: Float[jax.Array, "*batch 2 2 2 3"],
+    d6: Float[jax.Array, "*batch 2 2 2"],
+) -> RationalBernstein3D:
     r"""Interpolate selected vertex derivatives by a tricubic rational function.
 
     The result is a ratio of tensor-product cubics,
@@ -463,7 +498,17 @@ def rational_hermite_interpolate_3d(f, d1, d2, d3, d4, d5, d6):
     return _interpolate(3, (f, d1, d2, d3, d4, d5, d6))
 
 
-def rational_hermite_interpolate_4d(f, d1, d2, d3, d4, d5, d6, d7, d8):
+def rational_hermite_interpolate_4d(
+    f: Float[jax.Array, "*batch 2 2 2 2"],
+    d1: Float[jax.Array, "*batch 2 2 2 2 4"],
+    d2: Float[jax.Array, "*batch 2 2 2 2 10"],
+    d3: Float[jax.Array, "*batch 2 2 2 2 16"],
+    d4: Float[jax.Array, "*batch 2 2 2 2 19"],
+    d5: Float[jax.Array, "*batch 2 2 2 2 16"],
+    d6: Float[jax.Array, "*batch 2 2 2 2 10"],
+    d7: Float[jax.Array, "*batch 2 2 2 2 4"],
+    d8: Float[jax.Array, "*batch 2 2 2 2"],
+) -> RationalBernstein4D:
     r"""Interpolate selected vertex derivatives by a 4D tensor-cubic rational.
 
     The result is

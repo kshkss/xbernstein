@@ -5,6 +5,7 @@ from typing import NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Bool, Float, Int
 
 from .hermite import _multi_indices
 from .rational_hermite import rational_hermite_interpolate_3d
@@ -19,9 +20,9 @@ class GridSegment3D(NamedTuple):
     Valid rows are ordered from the requested segment start to its end.
     """
 
-    cell_indices: jax.Array
-    local_endpoints: jax.Array
-    valid_mask: jax.Array
+    cell_indices: Int[jax.Array, "m 3"]
+    local_endpoints: Float[jax.Array, "m 2 3"]
+    valid_mask: Bool[jax.Array, "m"]
 
 
 class RationalHermiteGrid3D(eqx.Module):
@@ -40,16 +41,16 @@ class RationalHermiteGrid3D(eqx.Module):
     local :math:`[0,1]^3` patch is constructed.
     """
 
-    x: jax.Array
-    y: jax.Array
-    z: jax.Array
-    f: jax.Array
-    d1: jax.Array
-    d2: jax.Array
-    d3: jax.Array
-    d4: jax.Array
-    d5: jax.Array
-    d6: jax.Array
+    x: Float[jax.Array, "nx"]
+    y: Float[jax.Array, "ny"]
+    z: Float[jax.Array, "nz"]
+    f: Float[jax.Array, "*batch nx ny nz"]
+    d1: Float[jax.Array, "*batch nx ny nz 3"]
+    d2: Float[jax.Array, "*batch nx ny nz 6"]
+    d3: Float[jax.Array, "*batch nx ny nz 7"]
+    d4: Float[jax.Array, "*batch nx ny nz 6"]
+    d5: Float[jax.Array, "*batch nx ny nz 3"]
+    d6: Float[jax.Array, "*batch nx ny nz"]
 
     def __init__(self, x, y, z, f, d1, d2, d3, d4, d5, d6):
         coordinates = tuple(jnp.asarray(axis) for axis in (x, y, z))
@@ -102,7 +103,7 @@ class RationalHermiteGrid3D(eqx.Module):
         """Return the maximum number of cells crossed by one segment."""
         return sum(size - 1 for size in self.grid_shape) - 2
 
-    def _point(self, point) -> jax.Array:
+    def _point(self, point: Float[jax.Array, "3"]) -> Float[jax.Array, "3"]:
         point = jnp.asarray(point, dtype=self.f.dtype)
         if point.shape != (3,):
             raise ValueError(f"point must have shape (3,), got {point.shape}")
@@ -110,7 +111,7 @@ class RationalHermiteGrid3D(eqx.Module):
         upper = jnp.asarray([self.x[-1], self.y[-1], self.z[-1]])
         return jnp.clip(point, lower, upper)
 
-    def cell_index(self, point) -> jax.Array:
+    def cell_index(self, point: Float[jax.Array, "3"]) -> Int[jax.Array, "3"]:
         """Return the index of the cell containing the clipped physical point."""
         point = self._point(point)
         indices = [
@@ -119,13 +120,21 @@ class RationalHermiteGrid3D(eqx.Module):
         ]
         return jnp.stack(indices).astype(jnp.int32)
 
-    def _local_coordinates(self, point: jax.Array, cell_index: jax.Array) -> jax.Array:
+    def _local_coordinates(
+        self,
+        point: Float[jax.Array, "3"],
+        cell_index: Int[jax.Array, "3"],
+    ) -> Float[jax.Array, "3"]:
         axes = (self.x, self.y, self.z)
         starts = jnp.stack([axis[index] for axis, index in zip(axes, cell_index)])
         ends = jnp.stack([axis[index + 1] for axis, index in zip(axes, cell_index)])
         return jnp.clip((point - starts) / (ends - starts), 0.0, 1.0)
 
-    def _cell_vertices(self, group: jax.Array, cell_index: jax.Array) -> jax.Array:
+    def _cell_vertices(
+        self,
+        group: Float[jax.Array, "..."],
+        cell_index: Int[jax.Array, "3"],
+    ) -> Float[jax.Array, "..."]:
         result = group
         batch_dimensions = len(self.shape)
         for axis_offset in range(3):
@@ -168,14 +177,18 @@ class RationalHermiteGrid3D(eqx.Module):
             local_groups.append(group)
         return rational_hermite_interpolate_3d(*local_groups)
 
-    def __call__(self, point):
+    def __call__(self, point: Float[jax.Array, "3"]) -> Float[jax.Array, "*batch"]:
         """Evaluate the clipped point with its cell's rational interpolant."""
         point = self._point(point)
         cell_index = self.cell_index(point)
         local = self._local_coordinates(point, cell_index)
         return self.cell_interpolant(cell_index)(local[0], local[1], local[2])
 
-    def split_segment(self, start, end) -> GridSegment3D:
+    def split_segment(
+        self,
+        start: Float[jax.Array, "3"],
+        end: Float[jax.Array, "3"],
+    ) -> GridSegment3D:
         r"""Split a clipped segment into fixed-capacity cell-local pieces.
 
         The capacity is ``(nx - 1) + (ny - 1) + (nz - 1) - 2``. Invalid

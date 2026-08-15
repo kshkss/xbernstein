@@ -5,7 +5,7 @@ from typing import ClassVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from .rational_bernstein import RationalBernstein, _from_homogeneous
 from .simplex_bernstein import (
@@ -22,8 +22,10 @@ from .simplex_bernstein import (
 
 
 def _evaluate_rational_simplex(
-    homogeneous: jax.Array, point: jax.Array, dimensions: int
-) -> jax.Array:
+    homogeneous: Float[jax.Array, "..."],
+    point: Float[jax.Array, "..."],
+    dimensions: int,
+) -> Float[jax.Array, "..."]:
     numerator = _evaluate_simplex_coefficients(
         homogeneous[0], point, dimensions
     )
@@ -34,8 +36,11 @@ def _evaluate_rational_simplex(
 
 
 def _rational_simplex_minimize(
-    homogeneous: jax.Array, dimensions: int, max_steps: int, eps: float
-) -> tuple[jax.Array, jax.Array]:
+    homogeneous: Float[jax.Array, "..."],
+    dimensions: int,
+    max_steps: int,
+    eps: float,
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]:
     degree = _infer_degree(dimensions, homogeneous.shape[-1])
     barycentric_dimensions = dimensions + 1
     capacity = 1 + max_steps
@@ -145,14 +150,19 @@ def _rational_simplex_minimize(
 def _make_rational_minimizer(dimensions: int):
     @jax.custom_jvp
     def minimize(
-        homogeneous: jax.Array, max_steps: int = 200, eps: float = 1e-6
-    ):
+        homogeneous: Float[jax.Array, "..."],
+        max_steps: int = 200,
+        eps: float = 1e-6,
+    ) -> tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]:
         return _rational_simplex_minimize(
             homogeneous, dimensions, max_steps, eps
         )
 
     @minimize.defjvp
-    def minimize_jvp(primals, tangents):
+    def minimize_jvp(
+        primals: tuple[Float[jax.Array, "..."], int, float],
+        tangents: tuple[Float[jax.Array, "..."], int, float],
+    ) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]], tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]]:
         homogeneous, max_steps, eps = primals
         tangent_homogeneous, _, _ = tangents
         value, point = _rational_simplex_minimize(
@@ -237,7 +247,11 @@ class _RationalSimplexBernstein(eqx.Module):
     simplex_dimensions: ClassVar[int]
     polynomial_type: ClassVar[type]
 
-    def __init__(self, values, weights):
+    def __init__(
+        self,
+        values: Float[jax.Array, "*value_batch coefficient"],
+        weights: Float[jax.Array, "*weight_batch coefficient"],
+    ):
         values = jnp.asarray(values)
         weights = jnp.asarray(weights)
         if values.ndim < 1 or weights.ndim < 1:
@@ -268,7 +282,9 @@ class _RationalSimplexBernstein(eqx.Module):
 
     @classmethod
     def _from_homogeneous(
-        cls, numerator: jax.Array, denominator: jax.Array
+        cls,
+        numerator: Float[jax.Array, "*batch coefficient"],
+        denominator: Float[jax.Array, "*batch coefficient"],
     ):
         result = object.__new__(cls)
         object.__setattr__(
@@ -287,22 +303,22 @@ class _RationalSimplexBernstein(eqx.Module):
         return self.polynomial_type(self.h[..., 1, :])
 
     @property
-    def values(self) -> jax.Array:
+    def values(self) -> Float[jax.Array, "*batch coefficient"]:
         r"""Return dehomogenized controls $c_\alpha=h_{0,\alpha}/h_{1,\alpha}$."""
         return self.h[..., 0, :] / self.h[..., 1, :]
 
     @property
-    def weights(self) -> jax.Array:
+    def weights(self) -> Float[jax.Array, "*batch coefficient"]:
         r"""Return strictly positive controls $w_\alpha=h_{1,\alpha}$."""
         return self.h[..., 1, :]
 
     @property
-    def c(self) -> jax.Array:
+    def c(self) -> Float[jax.Array, "*batch coefficient"]:
         """Return :attr:`values`."""
         return self.values
 
     @property
-    def w(self) -> jax.Array:
+    def w(self) -> Float[jax.Array, "*batch coefficient"]:
         """Return :attr:`weights`."""
         return self.weights
 
@@ -317,7 +333,7 @@ class _RationalSimplexBernstein(eqx.Module):
         return _infer_degree(self.simplex_dimensions, self.h.shape[-1])
 
     @property
-    def multi_indices(self) -> jax.Array:
+    def multi_indices(self) -> Int[jax.Array, "coefficient barycentric"]:
         """Return packed barycentric multi-indices."""
         return jnp.asarray(_multi_indices(self.simplex_dimensions, self.order))
 
@@ -326,7 +342,9 @@ class _RationalSimplexBernstein(eqx.Module):
         """Return the homogeneous scalar dtype."""
         return str(self.h.dtype)
 
-    def __call__(self, *coordinates):
+    def __call__(
+        self, *coordinates: Float[jax.Array, "..."]
+    ) -> Float[jax.Array, "..."]:
         r"""Evaluate $R=N/D$ at $d+1$ barycentric coordinates.
 
         Coordinate arrays broadcast to a shared point shape appended after
@@ -395,7 +413,7 @@ class _RationalSimplexBernstein(eqx.Module):
             )
         return result
 
-    def weight_sensitivity(self):
+    def weight_sensitivity(self) -> "RationalSimplexBernstein":
         r"""Return sensitivities to every packed simplex control weight.
 
         The added final batch axis selects the differentiated packed
@@ -426,7 +444,11 @@ class _RationalSimplexBernstein(eqx.Module):
             sensitivity_numerator.c, denominator_coefficients
         )
 
-    def segment(self, start: jax.Array, end: jax.Array) -> RationalBernstein:
+    def segment(
+        self,
+        start: Float[jax.Array, "..."],
+        end: Float[jax.Array, "..."],
+    ) -> RationalBernstein:
         r"""Restrict to the barycentric segment from ``start`` to ``end``."""
         start = jnp.asarray(start, dtype=self.h.dtype)
         end = jnp.asarray(end, dtype=self.h.dtype)

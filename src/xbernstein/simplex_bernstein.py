@@ -9,7 +9,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from .bernstein import Bernstein
 
@@ -75,8 +75,10 @@ def _elevation_matrix(
 
 
 def _elevate_coefficients(
-    coefficients: jax.Array, dimensions: int, target_degree: int
-) -> jax.Array:
+    coefficients: Float[jax.Array, "*batch coefficient"],
+    dimensions: int,
+    target_degree: int,
+) -> Float[jax.Array, "*batch elevated_coefficient"]:
     degree = _infer_degree(dimensions, coefficients.shape[-1])
     if target_degree < degree:
         raise ValueError("target degree must not be smaller than the current degree")
@@ -90,8 +92,10 @@ def _elevate_coefficients(
 
 
 def _evaluate_simplex_coefficients(
-    coefficients: jax.Array, point: jax.Array, dimensions: int
-) -> jax.Array:
+    coefficients: Float[jax.Array, "*batch coefficient"],
+    point: Float[jax.Array, "... barycentric"],
+    dimensions: int,
+) -> Float[jax.Array, "..."]:
     """Evaluate one unbatched packed polynomial at one barycentric point."""
     degree = _infer_degree(dimensions, coefficients.shape[-1])
     indices = jnp.asarray(_multi_indices(dimensions, degree))
@@ -124,8 +128,10 @@ def _product_data(dimensions: int, left_degree: int, right_degree: int):
 
 
 def _multiply_coefficients(
-    left: jax.Array, right: jax.Array, dimensions: int
-) -> jax.Array:
+    left: Float[jax.Array, "*batch_left left_coefficient"],
+    right: Float[jax.Array, "*batch_right right_coefficient"],
+    dimensions: int,
+) -> Float[jax.Array, "*batch product_coefficient"]:
     left_degree = _infer_degree(dimensions, left.shape[-1])
     right_degree = _infer_degree(dimensions, right.shape[-1])
     batch_shape = jnp.broadcast_shapes(left.shape[:-1], right.shape[:-1])
@@ -177,11 +183,11 @@ def _segment_data(dimensions: int, degree: int, output_index: int):
 
 
 def _segment_coefficients(
-    coefficients: jax.Array,
-    start: jax.Array,
-    end: jax.Array,
+    coefficients: Float[jax.Array, "*batch coefficient"],
+    start: Float[jax.Array, "... barycentric"],
+    end: Float[jax.Array, "... barycentric"],
     dimensions: int,
-) -> jax.Array:
+) -> Float[jax.Array, "*batch order"]:
     barycentric_dimensions = dimensions + 1
     if start.ndim < 1 or end.ndim < 1:
         raise ValueError("segment endpoints must have a final barycentric axis")
@@ -274,8 +280,11 @@ def _edge_subdivision_data(dimensions: int, degree: int):
 
 
 def _simplex_minimize(
-    coefficients: jax.Array, dimensions: int, max_steps: int, eps: float
-) -> tuple[jax.Array, jax.Array]:
+    coefficients: Float[jax.Array, "..."],
+    dimensions: int,
+    max_steps: int,
+    eps: float,
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]:
     degree = _infer_degree(dimensions, coefficients.shape[-1])
     barycentric_dimensions = dimensions + 1
     capacity = 1 + max_steps
@@ -382,8 +391,10 @@ def _simplex_minimize(
 def _make_minimizer(dimensions: int):
     @jax.custom_jvp
     def minimize(
-        coefficients: jax.Array, max_steps: int = 200, eps: float = 1e-6
-    ):
+        coefficients: Float[jax.Array, "..."],
+        max_steps: int = 200,
+        eps: float = 1e-6,
+    ) -> tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]:
         return _simplex_minimize(coefficients, dimensions, max_steps, eps)
 
     @minimize.defjvp
@@ -449,10 +460,10 @@ class _SimplexBernstein(eqx.Module):
     after them.
     """
 
-    c: Float[jax.Array, "... coefficient"]
+    c: Float[jax.Array, "*batch coefficient"]
     simplex_dimensions: ClassVar[int]
 
-    def __init__(self, c):
+    def __init__(self, c: Float[jax.Array, "*batch coefficient"]):
         coefficients = jnp.asarray(c)
         if coefficients.ndim < 1:
             raise ValueError("coefficients must have a packed coefficient axis")
@@ -470,7 +481,7 @@ class _SimplexBernstein(eqx.Module):
         return _infer_degree(self.simplex_dimensions, self.c.shape[-1])
 
     @property
-    def multi_indices(self) -> jax.Array:
+    def multi_indices(self) -> Int[jax.Array, "coefficient barycentric"]:
         """Return packed barycentric multi-indices with shape ``(count, d+1)``."""
         return jnp.asarray(_multi_indices(self.simplex_dimensions, self.order))
 
@@ -487,7 +498,7 @@ class _SimplexBernstein(eqx.Module):
             )
         return other
 
-    def _elevate(self, target_degree: int) -> jax.Array:
+    def _elevate(self, target_degree: int) -> Float[jax.Array, "*batch coefficient"]:
         return _elevate_coefficients(
             self.c, self.simplex_dimensions, target_degree
         )
@@ -554,7 +565,9 @@ class _SimplexBernstein(eqx.Module):
             ]
         return type(self)(coefficients)
 
-    def __call__(self, *coordinates) -> jax.Array:
+    def __call__(
+        self, *coordinates: Float[jax.Array, "..."]
+    ) -> Float[jax.Array, "..."]:
         r"""Evaluate at $d+1$ broadcast-compatible barycentric coordinates.
 
         On the standard simplex the coordinates are nonnegative and sum to
@@ -592,7 +605,11 @@ class _SimplexBernstein(eqx.Module):
         )
         return jnp.sum(coefficients * basis, axis=-1)
 
-    def segment(self, start: jax.Array, end: jax.Array) -> Bernstein:
+    def segment(
+        self,
+        start: Float[jax.Array, "..."],
+        end: Float[jax.Array, "..."],
+    ) -> Bernstein:
         r"""Restrict to $(1-t)\,\mathrm{start}+t\,\mathrm{end}$.
 
         Endpoints use a final barycentric axis of length $d+1$ and their
