@@ -183,7 +183,7 @@ class RationalHermiteGrid3DTest(unittest.TestCase):
         compiled_patch = jax.jit(lambda index: grid.cell_interpolant(index))(
             jnp.array([0, 0, 0])
         )
-        expected = RationalBernstein3D(values, weights)
+        expected = RationalBernstein3D(jnp.asarray(values), jnp.asarray(weights))
         local = jnp.array([0.2, 0.4, 0.7])
         physical = jnp.array([1.4, -0.8, 6.8])
         expected_value = expected(local[0], local[1], local[2])
