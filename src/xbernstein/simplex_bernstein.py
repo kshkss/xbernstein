@@ -446,20 +446,75 @@ _minimize_4ds = _make_minimizer(4)
 class _SimplexBernstein(eqx.Module):
     r"""Represent a scalar Bernstein polynomial on a standard simplex.
 
-    A dimension-$d$ simplex uses $d+1$ barycentric coordinates
-    $\boldsymbol\lambda$. Degree-$n$ coefficients are packed on the final
-    array axis in descending lexicographic order of
-    $\alpha\in\mathbb N^{d+1}$ with $|\alpha|=n$:
+    Let $d$ be ``simplex_dimensions``.  The standard $d$-simplex is
+
+    $$
+    \Delta^d=
+    \left\{\boldsymbol\lambda\in\mathbb R^{d+1}:
+    \lambda_i\ge 0\ (0\le i\le d),\quad
+    \sum_{i=0}^{d}\lambda_i=1\right\}.
+    $$
+
+    The entries of ``coordinates`` passed to :meth:`__call__` are precisely
+    the barycentric coordinates
+    $\boldsymbol\lambda=(\lambda_0,\ldots,\lambda_d)$.  For total degree
+    $n$, a multi-index is
+
+    $$
+    \boldsymbol\alpha=(\alpha_0,\ldots,\alpha_d)\in\mathbb N_0^{d+1},
+    \qquad |\boldsymbol\alpha|=\sum_{i=0}^{d}\alpha_i=n.
+    $$
+
+    The corresponding simplex Bernstein basis function is
+
+    $$
+    B_{\boldsymbol\alpha}^{n}(\boldsymbol\lambda)
+    =\binom{n}{\boldsymbol\alpha}
+      \boldsymbol\lambda^{\boldsymbol\alpha}
+    =\frac{n!}{\alpha_0!\cdots\alpha_d!}
+      \prod_{i=0}^{d}\lambda_i^{\alpha_i}.
+    $$
+
+    An instance represents the polynomial
 
     $$
     p(\boldsymbol\lambda)=
-    \sum_{|\alpha|=n}c_\alpha
-    \binom{n}{\alpha}\boldsymbol\lambda^\alpha.
+    \sum_{|\boldsymbol\alpha|=n}
+    c_{\boldsymbol\alpha}
+    B_{\boldsymbol\alpha}^{n}(\boldsymbol\lambda).
     $$
 
-    All preceding axes are independent batch axes. Arithmetic broadcasts only
-    those axes; evaluation coordinates broadcast into point axes appended
-    after them.
+    On $\Delta^d$, these basis functions satisfy
+
+    $$
+    B_{\boldsymbol\alpha}^{n}(\boldsymbol\lambda)\ge0,
+    \qquad
+    \sum_{|\boldsymbol\alpha|=n}
+    B_{\boldsymbol\alpha}^{n}(\boldsymbol\lambda)=1.
+    $$
+
+    There are
+    $\binom{n+d}{d}$ multi-indices, so the final coefficient axis has that
+    length.  ``multi_indices`` returns those multi-indices in the same
+    descending lexicographic order used by the packed coefficient array
+    ``c``.  All axes before that final axis are independent batch axes;
+    coordinate arrays are broadcast to a point shape appended after them.
+
+    ``deriv(m, axis=a)`` computes the ambient barycentric derivative
+    $\partial^m p/\partial\lambda_a^m$.  This is a derivative in the
+    $(d+1)$-coordinate ambient space; it is not a choice of $d$ independent
+    Cartesian coordinates on the constrained hyperplane
+    $\sum_i\lambda_i=1$.
+
+    ``segment(start, end)`` restricts the polynomial to the affine line
+
+    $$
+    \boldsymbol\lambda(t)=(1-t)\,\mathrm{start}+t\,\mathrm{end},
+    \qquad 0\le t\le1,
+    $$
+
+    and returns the resulting ordinary one-dimensional Bernstein polynomial
+    of the same degree.
     """
 
     c: Float[jax.Array, "*batch coefficient"]
@@ -630,8 +685,27 @@ class _SimplexBernstein(eqx.Module):
 class Bernstein2DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a triangle.
 
-    Evaluation takes three barycentric coordinates. A degree-$n$ packed
-    coefficient axis has length $\binom{n+2}{2}$.
+    The domain is
+
+    $$
+    \Delta^2=\{(\lambda_0,\lambda_1,\lambda_2):
+    \lambda_i\ge0,\quad \lambda_0+\lambda_1+\lambda_2=1\}.
+    $$
+
+    For degree $n$, the represented polynomial is
+
+    $$
+    p(\lambda_0,\lambda_1,\lambda_2)=
+    \sum_{\alpha_0+\alpha_1+\alpha_2=n}
+    c_{\alpha_0,\alpha_1,\alpha_2}
+    \frac{n!}{\alpha_0!\alpha_1!\alpha_2!}
+    \lambda_0^{\alpha_0}\lambda_1^{\alpha_1}\lambda_2^{\alpha_2}.
+    $$
+
+    Evaluation therefore takes three barycentric coordinates.  The packed
+    coefficient axis has
+    $\binom{n+2}{2}=(n+1)(n+2)/2$ entries, one for each triple
+    $(\alpha_0,\alpha_1,\alpha_2)$ with total $n$.
     """
 
     simplex_dimensions: ClassVar[int] = 2
@@ -640,8 +714,26 @@ class Bernstein2DS(_SimplexBernstein):
 class Bernstein3DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a tetrahedron.
 
-    Evaluation takes four barycentric coordinates. A degree-$n$ packed
-    coefficient axis has length $\binom{n+3}{3}$.
+    The tetrahedral domain is
+
+    $$
+    \Delta^3=\{(\lambda_0,\lambda_1,\lambda_2,\lambda_3):
+    \lambda_i\ge0,\quad \lambda_0+\lambda_1+\lambda_2+\lambda_3=1\}.
+    $$
+
+    For degree $n$,
+
+    $$
+    p(\boldsymbol\lambda)=
+    \sum_{\alpha_0+\alpha_1+\alpha_2+\alpha_3=n}
+    c_{\boldsymbol\alpha}
+    \frac{n!}{\alpha_0!\alpha_1!\alpha_2!\alpha_3!}
+    \prod_{i=0}^{3}\lambda_i^{\alpha_i}.
+    $$
+
+    Evaluation takes four barycentric coordinates.  The packed coefficient
+    axis has $\binom{n+3}{3}$ entries, corresponding to every nonnegative
+    quadruple of total degree $n$.
     """
 
     simplex_dimensions: ClassVar[int] = 3
@@ -650,8 +742,27 @@ class Bernstein3DS(_SimplexBernstein):
 class Bernstein4DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a 4-simplex.
 
-    Evaluation takes five barycentric coordinates. A degree-$n$ packed
-    coefficient axis has length $\binom{n+4}{4}$.
+    The standard 4-simplex is
+
+    $$
+    \Delta^4=\{\boldsymbol\lambda\in\mathbb R^5:
+    \lambda_i\ge0\ (0\le i\le4),\quad
+    \lambda_0+\lambda_1+\lambda_2+\lambda_3+\lambda_4=1\}.
+    $$
+
+    For degree $n$, this class represents
+
+    $$
+    p(\boldsymbol\lambda)=
+    \sum_{\alpha_0+\cdots+\alpha_4=n}
+    c_{\boldsymbol\alpha}
+    \frac{n!}{\alpha_0!\cdots\alpha_4!}
+    \lambda_0^{\alpha_0}\cdots\lambda_4^{\alpha_4}.
+    $$
+
+    Evaluation takes five barycentric coordinates.  The packed coefficient
+    axis has $\binom{n+4}{4}$ entries, one for each nonnegative 5-component
+    multi-index of total degree $n$.
     """
 
     simplex_dimensions: ClassVar[int] = 4
