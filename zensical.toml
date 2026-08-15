@@ -48,6 +48,47 @@ Copyright &copy; 2026 The authors
 #   { "Get started" = "index.md" },
 #   { "Markdown in 5min" = "markdown.md" },
 # ]
+nav = [
+  { "概要" = "index.md" },
+  { "数学ガイド" = [
+      { "記法" = "guide/notation.md" },
+      { "Bernstein 基底" = "guide/bernstein-basis.md" },
+      { "Tensor-product" = "guide/tensor-product.md" },
+      { "Simplex 基底" = "guide/simplex-basis.md" },
+      { "有理 Bernstein" = "guide/rational-functions.md" },
+      { "Hermite 補間" = "guide/hermite-interpolation.md" },
+      { "曲線とグリッド" = "guide/curves-and-grids.md" },
+      { "最適化" = "guide/optimization.md" }
+  ]},
+  { "API リファレンス" = [
+      { "多項式" = [
+          { "Bernstein" = "API/bernstein.md" },
+          { "Tensor Bernstein" = [
+              { "2D" = "API/bernstein_2d.md" },
+              { "3D" = "API/bernstein_3d.md" },
+              { "4D" = "API/bernstein_4d.md" }
+          ]},
+          { "Simplex Bernstein" = [
+              { "2D" = "API/bernstein_2ds.md" },
+              { "3D" = "API/bernstein_3ds.md" },
+              { "4D" = "API/bernstein_4ds.md" }
+          ]}
+      ]},
+      { "有理関数" = [
+          { "Rational Bernstein" = "API/rational_bernstein.md" },
+          { "Rational Tensor" = "API/rational_tensor_bernstein.md" },
+          { "Rational Simplex" = "API/rational_simplex_bernstein.md" }
+      ]},
+      { "補間" = [
+          { "Hermite" = "API/hermite.md" },
+          { "Rational Hermite" = "API/rational_hermite.md" },
+          { "3D Grid" = "API/rational_hermite_grid_3d.md" }
+      ]},
+      { "幾何" = [
+          { "Piecewise 3D Curve" = "API/piecewise_rational_curve_3d.md" }
+      ]}
+  ]}
+]
 
 # With the "extra_css" option you can add your own CSS styling to customize
 # your Zensical project according to your needs. You can add any number of
