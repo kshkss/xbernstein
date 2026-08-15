@@ -49,7 +49,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Shaped
 
 from .bernstein import Bernstein
 
@@ -805,7 +805,7 @@ class _TensorBernstein(eqx.Module):
 
     def segment(
         self, start: Float[jax.Array, "..."], end: Float[jax.Array, "..."]
-    ) -> Bernstein:
+    ) -> Shaped[Bernstein, "*batch"]:
         r"""Return the 1D Bernstein restriction of $p$ to an affine segment.
 
         With endpoints $\mathbf{a}=$ ``start`` and $\mathbf{b}=$ ``end``, the

@@ -3,7 +3,7 @@ r"""Piecewise G² cubic rational Bernstein curves in three dimensions."""
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float
+from jaxtyping import Float, Shaped
 
 from .rational_bernstein import RationalBernstein
 
@@ -94,7 +94,7 @@ class PiecewiseRationalCurve3D(eqx.Module):
         """Return the scalar dtype used by the node data."""
         return str(self.positions.dtype)
 
-    def interpolant(self, segment_index: int) -> RationalBernstein:
+    def interpolant(self, segment_index: int) -> Shaped[RationalBernstein, ""]:
         r"""Return the G² cubic rational Bernstein interpolant for one interval.
 
         The endpoint weights are normalized to one.  The two interior control

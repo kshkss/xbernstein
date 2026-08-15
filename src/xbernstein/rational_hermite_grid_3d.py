@@ -5,7 +5,7 @@ from typing import NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float, Int, Shaped
 
 from .hermite import _multi_indices
 from .rational_hermite import rational_hermite_interpolate_3d
@@ -142,7 +142,7 @@ class RationalHermiteGrid3D(eqx.Module):
             result = jnp.take(result, indices, axis=batch_dimensions + axis_offset)
         return result
 
-    def cell_interpolant(self, cell_index) -> RationalBernstein3D:
+    def cell_interpolant(self, cell_index) -> Shaped[RationalBernstein3D, "*batch"]:
         """Return the tricubic rational Bernstein interpolant for one cell."""
         cell_index = jnp.asarray(cell_index)
         if cell_index.shape != (3,):

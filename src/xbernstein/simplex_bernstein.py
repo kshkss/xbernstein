@@ -9,7 +9,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, Shaped
 
 from .bernstein import Bernstein
 
@@ -609,7 +609,7 @@ class _SimplexBernstein(eqx.Module):
         self,
         start: Float[jax.Array, "..."],
         end: Float[jax.Array, "..."],
-    ) -> Bernstein:
+    ) -> Shaped[Bernstein, "*batch"]:
         r"""Restrict to $(1-t)\,\mathrm{start}+t\,\mathrm{end}$.
 
         Endpoints use a final barycentric axis of length $d+1$ and their

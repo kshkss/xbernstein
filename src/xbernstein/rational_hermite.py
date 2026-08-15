@@ -6,7 +6,7 @@ import math
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Bool, Float, Int
+from jaxtyping import Bool, Float, Int, Shaped
 
 from .hermite import _multi_indices, _validate_groups
 from .rational_bernstein import RationalBernstein
@@ -232,7 +232,7 @@ def _subset_indices(
 
 def _interpolate(
     dimensions: int, groups: tuple[Float[jax.Array, "..."], ...]
-) -> RationalBernstein | RationalBernstein2D | RationalBernstein3D | RationalBernstein4D:
+) -> Shaped[RationalBernstein, "*batch"] | Shaped[RationalBernstein2D, "*batch"] | Shaped[RationalBernstein3D, "*batch"] | Shaped[RationalBernstein4D, "*batch"]:
     values, batch_shape = _validate_groups(dimensions, 5, groups)
     derivatives = _unpack_derivatives(dimensions, values)
     dtype = values[0].dtype
@@ -309,7 +309,7 @@ def rational_hermite_interpolate_1d(
     f: Float[jax.Array, "*batch 2"],
     d1: Float[jax.Array, "*batch 2"],
     d2: Float[jax.Array, "*batch 2"],
-) -> RationalBernstein:
+) -> Shaped[RationalBernstein, "*batch"]:
     r"""Interpolate endpoint values through second derivatives by a cubic rational.
 
     The result has the form
@@ -356,7 +356,7 @@ def rational_hermite_interpolate_2d(
     d2: Float[jax.Array, "*batch 2 2 3"],
     d3: Float[jax.Array, "*batch 2 2 2"],
     d4: Float[jax.Array, "*batch 2 2"],
-) -> RationalBernstein2D:
+) -> Shaped[RationalBernstein2D, "*batch"]:
     r"""Interpolate selected vertex derivatives by a bicubic rational function.
 
     The result is
@@ -431,7 +431,7 @@ def rational_hermite_interpolate_3d(
     d4: Float[jax.Array, "*batch 2 2 2 6"],
     d5: Float[jax.Array, "*batch 2 2 2 3"],
     d6: Float[jax.Array, "*batch 2 2 2"],
-) -> RationalBernstein3D:
+) -> Shaped[RationalBernstein3D, "*batch"]:
     r"""Interpolate selected vertex derivatives by a tricubic rational function.
 
     The result is a ratio of tensor-product cubics,
@@ -508,7 +508,7 @@ def rational_hermite_interpolate_4d(
     d6: Float[jax.Array, "*batch 2 2 2 2 10"],
     d7: Float[jax.Array, "*batch 2 2 2 2 4"],
     d8: Float[jax.Array, "*batch 2 2 2 2"],
-) -> RationalBernstein4D:
+) -> Shaped[RationalBernstein4D, "*batch"]:
     r"""Interpolate selected vertex derivatives by a 4D tensor-cubic rational.
 
     The result is

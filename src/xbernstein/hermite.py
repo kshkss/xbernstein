@@ -41,7 +41,7 @@ import math
 from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, jaxtyped
+from jaxtyping import Float, Shaped, jaxtyped
 
 from .bernstein import Bernstein
 from .bernstein_2d import Bernstein2D
@@ -139,7 +139,7 @@ def _interpolate(
 @jaxtyped(typechecker=beartype)
 def linear_interpolate_1d(
     f: Float[jax.Array, "*batch 2"],
-) -> Float[Bernstein, "*batch"]:
+) -> Shaped[Bernstein, "*batch"]:
     r"""Interpolate two endpoint values by the unique degree-1 Bernstein polynomial.
 
     The result is the affine function
@@ -166,7 +166,7 @@ def linear_interpolate_1d(
 @jaxtyped(typechecker=beartype)
 def linear_interpolate_2d(
     f: Float[jax.Array, "*batch 2 2"],
-) -> Float[Bernstein2D, "*batch"]:
+) -> Shaped[Bernstein2D, "*batch"]:
     r"""Interpolate vertex values by the unique bilinear Bernstein polynomial.
 
     The result is
@@ -195,7 +195,7 @@ def linear_interpolate_2d(
 @jaxtyped(typechecker=beartype)
 def linear_interpolate_3d(
     f: Float[jax.Array, "*batch 2 2 2"],
-) -> Float[Bernstein3D, "*batch"]:
+) -> Shaped[Bernstein3D, "*batch"]:
     r"""Interpolate vertex values by the unique trilinear Bernstein polynomial.
 
     Writing $\mathbf{x}=(x,y,z)$, the result is
@@ -227,7 +227,7 @@ def linear_interpolate_3d(
 @jaxtyped(typechecker=beartype)
 def linear_interpolate_4d(
     f: Float[jax.Array, "*batch 2 2 2 2"],
-) -> Float[Bernstein4D, "*batch"]:
+) -> Shaped[Bernstein4D, "*batch"]:
     r"""Interpolate vertex values by the unique 4D multilinear Bernstein polynomial.
 
     For $\mathbf{x}=(x,y,z,w)$, the result is
@@ -259,7 +259,7 @@ def linear_interpolate_4d(
 @jaxtyped(typechecker=beartype)
 def hermite_interpolate_1d(
     f: Float[jax.Array, "*batch 2"], d1: Float[jax.Array, "*batch 2"]
-) -> Float[Bernstein, "*batch"]:
+) -> Shaped[Bernstein, "*batch"]:
     r"""Interpolate endpoint values and slopes by the unique cubic polynomial.
 
     The result
@@ -289,7 +289,7 @@ def hermite_interpolate_2d(
     f: Float[jax.Array, "*batch 2 2"],
     d1: Float[jax.Array, "*batch 2 2 2"],
     d2: Float[jax.Array, "*batch 2 2"],
-) -> Float[Bernstein2D, "*batch"]:
+) -> Shaped[Bernstein2D, "*batch"]:
     r"""Interpolate the first-order vertex jet by a bicubic Bernstein polynomial.
 
     The result is the unique tensor-product polynomial
@@ -327,7 +327,7 @@ def hermite_interpolate_3d(
     d1: Float[jax.Array, "*batch 2 2 2 3"],
     d2: Float[jax.Array, "*batch 2 2 2 3"],
     d3: Float[jax.Array, "*batch 2 2 2"],
-) -> Float[Bernstein3D, "*batch"]:
+) -> Shaped[Bernstein3D, "*batch"]:
     r"""Interpolate the first-order vertex jet by a tricubic Bernstein polynomial.
 
     For $\mathbf{x}=(x,y,z)$, the result is the unique
@@ -369,7 +369,7 @@ def hermite_interpolate_4d(
     d2: Float[jax.Array, "*batch 2 2 2 2 6"],
     d3: Float[jax.Array, "*batch 2 2 2 2 4"],
     d4: Float[jax.Array, "*batch 2 2 2 2"],
-) -> Float[Bernstein4D, "*batch"]:
+) -> Shaped[Bernstein4D, "*batch"]:
     r"""Interpolate the first-order vertex jet by a 4D tensor-cubic polynomial.
 
     For $\mathbf{x}=(x,y,z,w)$, the result is the unique
@@ -411,7 +411,7 @@ def quintic_hermite_interpolate_1d(
     f: Float[jax.Array, "*batch 2"],
     d1: Float[jax.Array, "*batch 2"],
     d2: Float[jax.Array, "*batch 2"],
-) -> Float[Bernstein, "*batch"]:
+) -> Shaped[Bernstein, "*batch"]:
     r"""Interpolate endpoint values through second derivatives by a quintic.
 
     The result
@@ -444,7 +444,7 @@ def quintic_hermite_interpolate_2d(
     d2: Float[jax.Array, "*batch 2 2 3"],
     d3: Float[jax.Array, "*batch 2 2 2"],
     d4: Float[jax.Array, "*batch 2 2"],
-) -> Float[Bernstein2D, "*batch"]:
+) -> Shaped[Bernstein2D, "*batch"]:
     r"""Interpolate the second-order vertex jet by a biquintic polynomial.
 
     The result is the unique tensor-product polynomial
@@ -489,7 +489,7 @@ def quintic_hermite_interpolate_3d(
     d4: Float[jax.Array, "*batch 2 2 2 6"],
     d5: Float[jax.Array, "*batch 2 2 2 3"],
     d6: Float[jax.Array, "*batch 2 2 2"],
-) -> Float[Bernstein3D, "*batch"]:
+) -> Shaped[Bernstein3D, "*batch"]:
     r"""Interpolate the second-order vertex jet by a triquintic polynomial.
 
     For $\mathbf{x}=(x,y,z)$, the result is the unique
@@ -539,7 +539,7 @@ def quintic_hermite_interpolate_4d(
     d6: Float[jax.Array, "*batch 2 2 2 2 10"],
     d7: Float[jax.Array, "*batch 2 2 2 2 4"],
     d8: Float[jax.Array, "*batch 2 2 2 2"],
-) -> Float[Bernstein4D, "*batch"]:
+) -> Shaped[Bernstein4D, "*batch"]:
     r"""Interpolate the second-order vertex jet by a 4D tensor-quintic polynomial.
 
     For $\mathbf{x}=(x,y,z,w)$, the result is the unique
