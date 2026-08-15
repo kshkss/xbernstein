@@ -87,6 +87,36 @@ def _elevate(
 class Bernstein(eqx.Module):
     r"""Represent $p(t)=\sum_{i=0}^n c_i B_i^n(t)$ on $[0,1]$.
 
+    概要
+    ----
+    This is a scalar- or vector-valued polynomial on the unit interval.
+
+    数学的表現
+    ----------
+    $B_i^n(t)=\binom{n}{i}t^i(1-t)^{n-i}$ is the Bernstein basis; $c_i$ are
+    controls and $n$ is the degree.
+
+    配列表現
+    ----------
+    ``c`` has shape ``(*batch,n+1)``.  The final axis is the coefficient axis;
+    leading axes are batches and ``dtype`` is the coefficient scalar dtype.
+
+    評価
+    ----
+    $p(t)$ broadcasts ``t`` and returns shape ``(*batch,*t.shape)``.
+
+    演算
+    ----
+    Addition and subtraction degree-elevate operands; multiplication uses the
+    Bernstein product.  ``deriv`` and ``int`` implement
+    $p'=\sum_i n(c_{i+1}-c_i)B_i^{n-1}$ and $P'=p$ with $P(0)=k$;
+    ``split`` restricts to affine subintervals.
+
+    数学的注意点
+    ------------
+    The parameter is one-dimensional and independent of batch axes.  Degree
+    elevation changes controls but not the represented polynomial.
+
     The coefficient array ``c`` has shape ``(*batch, n + 1)``. Its final axis
     stores the Bernstein index $i$, while every leading axis represents an
     independent polynomial or a vector-valued coefficient component. All

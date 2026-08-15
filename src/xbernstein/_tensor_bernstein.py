@@ -225,6 +225,39 @@ def _tensor_minimize_jvp(
 class _TensorBernstein(eqx.Module):
     r"""Implement $p(\mathbf{u})$ in the tensor-product Bernstein basis.
 
+    概要
+    ----
+    The domain is $[0,1]^d$ and the polynomial is evaluated in independent
+    coordinates $\mathbf{u}=(u_0,\ldots,u_{d-1})$.
+
+    数学的表現
+    ----------
+    $p(\mathbf{u})=\sum_{\mathbf{i}}c_{\mathbf{i}}
+    \prod_a B_{i_a}^{n_a}(u_a)$ with degree vector $\mathbf{n}$ and
+    multi-index $\mathbf{i}$.
+
+    配列表現
+    ----------
+    ``c`` has shape ``(*batch,n_0+1,...,n_{d-1}+1)``; the final ``d`` axes
+    are coefficient axes and all preceding axes are batches.
+
+    評価
+    ----
+    ``__call__(*u)`` broadcasts coordinate arrays and appends their broadcast
+    shape after ``*batch``.
+
+    演算
+    ----
+    Arithmetic uses degree alignment and tensor products.  ``deriv`` applies
+    $\partial_a p=\sum_{\mathbf{i}}n_a(c_{\mathbf{i}+\mathbf{e}_a}-c_{\mathbf{i}})
+    B_{\mathbf{i}}^{\mathbf{n}-\mathbf{e}_a}$; ``int``, ``split``,
+    ``slice``, and ``integrate_out`` act on the selected parameter axis.
+
+    数学的注意点
+    ------------
+    Tensor coordinates are independent (unlike barycentric simplex
+    coordinates).  Trailing degree axes must never be confused with batches.
+
     Each subclass fixes the parameter dimension $d$. If ``c`` has shape
     ``(*batch, n_0 + 1, ..., n_{d-1} + 1)``, its trailing axes store
     $c_{\mathbf{i}}$ and its leading axes identify independently evaluated
@@ -298,7 +331,7 @@ class _TensorBernstein(eqx.Module):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Return the coefficient-array axes preceding the multi-index $\mathbf{i}$."""
+        r"""Return the coefficient-array axes preceding the multi-index $\mathbf{i}$."""
         return self.c.shape[: -self.parameter_dimensions]
 
     @property
@@ -321,7 +354,7 @@ class _TensorBernstein(eqx.Module):
 
     @property
     def dtype(self) -> str:
-        """Return the scalar field used for every tensor coefficient $c_{\mathbf{i}}$."""
+        r"""Return the scalar field used for every tensor coefficient $c_{\mathbf{i}}$."""
         return str(self.c.dtype)
 
     def _axis_index(self, axis: int) -> int:
@@ -399,7 +432,7 @@ class _TensorBernstein(eqx.Module):
     def _broadcast_coefficients(
         self, c: Float[jax.Array, "..."], batch_shape: tuple[int, ...], degree_shape: tuple[int, ...]
     ) -> Float[jax.Array, "..."]:
-        """Broadcast $c_{\mathbf{i}}$ over leading axes without changing its basis axes."""
+        r"""Broadcast $c_{\mathbf{i}}$ over leading axes without changing its basis axes."""
         return jnp.broadcast_to(c, batch_shape + degree_shape)
 
     def _aligned_coefficients(

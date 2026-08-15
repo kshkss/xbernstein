@@ -218,31 +218,50 @@ _minimize_rational_4ds = _make_rational_minimizer(4)
 class _RationalSimplexBernstein(eqx.Module):
     r"""Represent a positive-weight rational function on a standard simplex.
 
-    For packed degree-$n$ controls and positive weights,
+    概要
+    ----
+    The domain is the barycentric simplex
+    The domain is
+    $\Delta_d=\{\boldsymbol{\lambda}:\lambda_a\geq0,
+    \sum_{a=0}^{d}\lambda_a=1\}$.  For total degree $n$,
+    $R(\boldsymbol{\lambda})=N(\boldsymbol{\lambda})/D(\boldsymbol{\lambda})$.
 
-    $$
-    R(\boldsymbol\lambda)=
-    \frac{\sum_{|\alpha|=n}w_\alpha c_\alpha B_\alpha^n}
-         {\sum_{|\alpha|=n}w_\alpha B_\alpha^n}.
-    $$
+    数学的表現
+    ----------
+    For $|\alpha|=n$,
+    $$B_\alpha^n(\boldsymbol{\lambda})=
+    \frac{n!}{\prod_a\alpha_a!}\prod_a\lambda_a^{\alpha_a},$$
+    $$N=\sum_{|\alpha|=n}w_\alpha c_\alpha B_\alpha^n,\qquad
+      D=\sum_{|\alpha|=n}w_\alpha B_\alpha^n.$$
+    The homogeneous components are $h_{...,0,\alpha}=w_\alpha c_\alpha$ and
+    $h_{...,1,\alpha}=w_\alpha$.
 
-    The homogeneous array has shape ``(*batch, 2, coefficient_count)``;
-    component zero stores $w_\alpha c_\alpha$ and component one stores
-    $w_\alpha$. Leading axes of ``values`` and ``weights`` broadcast, while
-    their packed coefficient-axis lengths must agree.
+    配列表現
+    ----------
+    ``h`` has shape ``(*batch, 2, coefficient_count)``; the packed final
+    axis enumerates ``multi_indices`` in lexicographic order.  ``values`` and
+    ``weights`` broadcast on leading batch axes, and retain their dtype.
 
-    Batch dimensions
-    ----------------
+    評価
+    ----
+    $R(\boldsymbol{\lambda})$ accepts a barycentric point with trailing shape ``(d+1,)``;
+    preceding point axes broadcast and are appended after ``*batch`` in the
+    returned shape.
 
-    Every axis before the homogeneous and packed coefficient axes is a batch
-    axis. ``values`` and ``weights`` right-broadcast on those axes. Arithmetic
-    broadcasts the batch shapes separately from degree alignment, while
-    coordinate arrays create evaluation axes after the batch axes.
-
+    演算
+    ----
     Addition, subtraction, and multiplication use denominator products and
-    therefore add total degrees. Tensor-only operations such as axis
-    ``split``, ``slice``, ``int``, and ``integrate_out`` are not defined for
-    simplex functions.
+    add total degrees.  Differentiation uses the quotient rule
+    $R'=(N'D-ND')/D^2$; ``weight_sensitivity`` returns
+    $\frac{\partial R}{\partial w_\alpha}=\frac{B_\alpha^n(c_\alpha D-N)}{D^2}$.  Tensor-only ``split``,
+    ``slice``, ``int``, and ``integrate_out`` operations are unavailable.
+
+    数学的注意点
+    ------------
+    Barycentric derivatives obey the simplex constraint and are not the same
+    as independent Cartesian coordinate derivatives.  Strictly positive
+    weights guarantee $D>0$ on $\Delta_d$; non-positive weights may create
+    poles.  Batch axes are distinct from the homogeneous and coefficient axes.
     """
 
     h: Float[jax.Array, "... component coefficient"]
@@ -394,6 +413,10 @@ class _RationalSimplexBernstein(eqx.Module):
 
         Each step applies $(N_aD-ND_a)/D^2$ and degree-elevates the numerator
         to the denominator's total degree.
+
+        The returned object has the same batch shape and a reduced simplex
+        coefficient degree.  ``axis`` selects the barycentric coordinate, not
+        a batch axis; no independent-coordinate constraint is imposed here.
         """
         self.numerator.deriv(m=0, axis=axis)
         if m < 0:
@@ -427,6 +450,8 @@ class _RationalSimplexBernstein(eqx.Module):
         $$
 
         The return type matches ``self`` and has twice the total degree.
+        Its final batch axis enumerates the packed weight index and evaluation
+        points retain their broadcast axes after all coefficient batch axes.
         """
         count = self.h.shape[-1]
         numerator = self.numerator
@@ -466,6 +491,12 @@ class _RationalSimplexBernstein(eqx.Module):
 class RationalBernstein2DS(_RationalSimplexBernstein):
     r"""Represent a positive-weight rational Bernstein function on a triangle.
 
+    概要・数学的表現
+    ----------------
+    $R=N/D$ uses the total-degree simplex basis and positive weights.
+
+    配列表現・評価
+    --------------
     Evaluation accepts three barycentric coordinates. Degree-$n$ ``values``
     and ``weights`` have packed final length $\binom{n+2}{2}$.
     """
@@ -477,6 +508,12 @@ class RationalBernstein2DS(_RationalSimplexBernstein):
 class RationalBernstein3DS(_RationalSimplexBernstein):
     r"""Represent a positive-weight rational Bernstein function on a tetrahedron.
 
+    概要・数学的表現
+    ----------------
+    $R=N/D$ uses total-degree tetrahedral Bernstein basis functions.
+
+    配列表現・評価
+    --------------
     Evaluation accepts four barycentric coordinates. Degree-$n$ packed arrays
     have final length $\binom{n+3}{3}$.
     """
@@ -488,6 +525,12 @@ class RationalBernstein3DS(_RationalSimplexBernstein):
 class RationalBernstein4DS(_RationalSimplexBernstein):
     r"""Represent a positive-weight rational Bernstein function on a 4-simplex.
 
+    概要・数学的表現
+    ----------------
+    $R=N/D$ uses total-degree 4-simplex Bernstein basis functions.
+
+    配列表現・評価
+    --------------
     Evaluation accepts five barycentric coordinates. Degree-$n$ packed arrays
     have final length $\binom{n+4}{4}$.
     """

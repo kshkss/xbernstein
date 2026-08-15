@@ -31,17 +31,44 @@ class GridSegment3D(NamedTuple):
 class RationalHermiteGrid3D(eqx.Module):
     r"""Store scalar vertex jets on a nonuniform rectilinear 3D grid.
 
+    概要
+    ----
+    The physical domain is the Cartesian box bounded by the strictly
+    increasing coordinate arrays.  Each cell is mapped to $[0,1]^3$ and
+    represented by a rational Bernstein patch $R(\mathbf{u})=N(\mathbf{u})/D(\mathbf{u})$.
+
+    数学的表現
+    ----------
+    The supplied vertex jets determine the values of partial derivatives of
+    $N/D$ through second order in each coordinate; the staged solver finds
+    homogeneous coefficients $(w c,w)$ satisfying those equations.
+
+    配列表現
+    ----------
+
     ``x``, ``y``, and ``z`` are strictly increasing coordinate arrays. ``f``
     has shape ``(*batch, nx, ny, nz)``. Derivative groups ``d1`` through
     ``d6`` use the same ordering as :func:`rational_hermite_interpolate_3d`
     and have derivative-kind counts ``3, 6, 7, 6, 3, 1``. Leading batch axes
     must be identical for every group and are preserved by evaluation.
 
+    評価
+    ----
     Query points have shape ``(3,)`` and are clipped componentwise to the
     closed grid domain. Interior grid planes belong to the cell on their
     positive side; the upper domain endpoint belongs to the final cell.
     Physical derivatives are scaled by the selected cell widths before the
     local :math:`[0,1]^3` patch is constructed.
+
+    演算
+    ----
+    ``cell_interpolant(i)`` returns one cell patch and ``split_segment(a,b)``
+    partitions a physical segment at grid planes.
+
+    数学的注意点
+    ------------
+    Physical axes and local Bernstein axes are different coordinate systems.
+    Derivative-group axes are distinct from leading batch axes.
     """
 
     x: Float[jax.Array, "nx"]

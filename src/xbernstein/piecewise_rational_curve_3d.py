@@ -28,6 +28,21 @@ def _solve_two_columns(
 class PiecewiseRationalCurve3D(eqx.Module):
     r"""Store a chain of 3D G² cubic rational Bernstein curve segments.
 
+    概要
+    ----
+    The parameter domain is the ordered node interval chain.  On each
+    interval the curve is a cubic rational map $r(t)=N(t)/D(t)$ into
+    $\mathbb{R}^3$.
+
+    数学的表現
+    ----------
+    $N(t)=\sum_i w_i c_i B_i^3(t)$ and
+    $D(t)=\sum_i w_i B_i^3(t)$.  Endpoint positions, tangent directions,
+    and curvature vectors impose the G² Hermite conditions.
+
+    配列表現
+    ----------
+
     ``positions``, ``tangents``, and ``curvatures`` all have shape
     ``(segment_count + 1, 3)``.  Tangents are normalized on construction;
     curvature vectors are projected onto their tangent-normal planes.  Thus
@@ -37,6 +52,17 @@ class PiecewiseRationalCurve3D(eqx.Module):
     :meth:`interpolant` constructs one degree-three rational Bernstein curve.
     Its returned :class:`RationalBernstein` has three leading value axes and
     therefore evaluates to a point with shape ``(3,)``.
+
+    演算
+    ----
+    ``interpolant(k)`` selects interval ``k``.  ``translated(delta)`` replaces
+    each position by $p+\delta$ and preserves tangent and curvature data.
+
+    数学的注意点
+    ------------
+    Tangents are normalized and curvatures are projected onto their normal
+    planes.  Positive weights guarantee $D(t)>0$; vector components are
+    value axes, distinct from the segment axis.
     """
 
     positions: Float[jax.Array, "nodes 3"]

@@ -340,10 +340,10 @@ def rational_hermite_interpolate_1d(
     reconstructed $w_i$ must be positive; consequently $D(x)>0$ on
     $[0,1]$.
 
-    **Inputs:** ``f[...,v_x]=f(v_x)``,
-    ``d1[...,v_x]=f_x(v_x)``, and ``d2[...,v_x]=f_xx(v_x)``; all have shape
+    **Inputs:** $f[...,v_x]=f(v_x)$,
+    $d_1[...,v_x]=f_x(v_x)$, and $d_2[...,v_x]=f_{xx}(v_x)$; all have shape
     ``(*batch,2)``. Each leading batch item is solved independently.
-    **Returns:** ``rpoly.order == 3``. The rank-deficient stage, if any, uses
+    **Returns:** $\operatorname{order}(R)=3$. The rank-deficient stage, if any, uses
     a scaled minimum-norm solution. An inconsistent stage or any non-positive
     reconstructed denominator weight raises an error.
     """
@@ -407,17 +407,17 @@ def rational_hermite_interpolate_2d(
     third derivatives. Corner denominator controls are fixed to one and all
     denominator controls must be positive, so $D>0$ on $[0,1]^2$.
 
-    **Inputs:** vertex axes are ``v_x,v_y``:
-    ``f[...,v_x,v_y]=f(v_x,v_y)``.
-    ``d1[...,v_x,v_y,0/1]=(f_x,f_y)``,
-    ``d2[...,v_x,v_y,0/1/2]=(f_xx,f_xy,f_yy)``,
-    ``d3[...,v_x,v_y,0/1]=(f_xxy,f_xyy)``, and
-    ``d4[...,v_x,v_y]=f_xxyy``. Each leading batch item is solved
+    **Inputs:** vertex axes are $v_x,v_y$:
+    $f[...,v_x,v_y]=f(v_x,v_y)$.
+    $d_1[...,v_x,v_y,0/1]=(f_x,f_y)$,
+    $d_2[...,v_x,v_y,0/1/2]=(f_{xx},f_{xy},f_{yy})$,
+    $d_3[...,v_x,v_y,0/1]=(f_{xxy},f_{xyy})$, and
+    $d_4[...,v_x,v_y]=f_{xxyy}$. Each leading batch item is solved
     independently.
     The solver fixes the ``x`` and ``y`` terms independently, then the
     ``xy`` crossing terms. Rank-deficient subset systems use scaled
     minimum-norm solutions.
-    **Returns:** ``rpoly.order == [3,3]``. An inconsistent stage or any
+    **Returns:** $\operatorname{order}(R)=(3,3)$. An inconsistent stage or any
     non-positive reconstructed weight raises an error.
     """
     return _interpolate(2, (f, d1, d2, d3, d4))
@@ -481,18 +481,18 @@ def rational_hermite_interpolate_3d(
     controls are normalized to one; all reconstructed denominator controls
     must be positive, ensuring $D>0$ on $[0,1]^3$.
 
-    **Inputs:** vertex axes are ``v_x,v_y,v_z``:
-    ``f[...,v_x,v_y,v_z]=f(v_x,v_y,v_z)``.
-    ``d1[...,v_x,v_y,v_z,0/1/2]=(f_x,f_y,f_z)``,
-    ``d2[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_yy,f_yz,...)``,
-    ``d3[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xyy,f_xyz,f_xzz,...)``,
-    ``d4[...,v_x,v_y,v_z,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxzz,f_xyyz,f_xyzz,...)``,
-    ``d5[...,v_x,v_y,v_z,0/1/2]=(f_xxyyz,f_xxyzz,f_xyyzz)``, and
-    ``d6[...,v_x,v_y,v_z]=f_xxyyzz``. Derivative-kind counts are
+    **Inputs:** vertex axes are $v_x,v_y,v_z$:
+    $f[...,v_x,v_y,v_z]=f(v_x,v_y,v_z)$.
+    $d_1[...,v_x,v_y,v_z,0/1/2]=(f_x,f_y,f_z)$,
+    $d_2[...,v_x,v_y,v_z,0/1/2/3/4]=(f_{xx},f_{xy},f_{xz},f_{yy},f_{yz},...)$,
+    $d_3[...,v_x,v_y,v_z,0/1/2/3/4]=(f_{xxy},f_{xxz},f_{xyy},f_{xyz},f_{xzz},...)$,
+    $d_4[...,v_x,v_y,v_z,0/1/2/3/4]=(f_{xxyy},f_{xxyz},f_{xxzz},f_{xyyz},f_{xyzz},...)$,
+    $d_5[...,v_x,v_y,v_z,0/1/2]=(f_{xxyyz},f_{xxyzz},f_{xyyzz})$, and
+    $d_6[...,v_x,v_y,v_z]=f_{xxyyzz}$. Derivative-kind counts are
     ``3,6,7,6,3,1``. Each leading batch item is solved independently.
     Terms are solved independently for each axis subset, ordered by subset
     size; rank-deficient subset systems use scaled minimum-norm solutions.
-    **Returns:** ``rpoly.order == [3,3,3]``. An inconsistent stage or any
+    **Returns:** $\operatorname{order}(R)=(3,3,3)$. An inconsistent stage or any
     non-positive reconstructed weight raises an error.
     """
     return _interpolate(3, (f, d1, d2, d3, d4, d5, d6))
@@ -557,21 +557,21 @@ def rational_hermite_interpolate_4d(
     can be omitted. Corner denominator controls are normalized to one and all
     reconstructed controls must be positive, so $D>0$ on $[0,1]^4$.
 
-    **Inputs:** vertex axes are ``v_x,v_y,v_z,v_w``:
-    ``f[...,v_x,v_y,v_z,v_w]=f(v_x,v_y,v_z,v_w)``.
-    ``d1[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_x,f_y,f_z,f_w)``,
+    **Inputs:** vertex axes are $v_x,v_y,v_z,v_w$:
+    $f[...,v_x,v_y,v_z,v_w]=f(v_x,v_y,v_z,v_w)$.
+    $d_1[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_x,f_y,f_z,f_w)$,
     ``d2[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xx,f_xy,f_xz,f_xw,f_yy,...)``,
     ``d3[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxy,f_xxz,f_xxw,f_xyy,f_xyz,...)``,
     ``d4[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyy,f_xxyz,f_xxyw,f_xxzz,f_xxzw,...)``,
     ``d5[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyz,f_xxyyw,f_xxyzz,f_xxyzw,f_xxyww,...)``,
     ``d6[...,v_x,v_y,v_z,v_w,0/1/2/3/4/...]=(f_xxyyzz,f_xxyyzw,f_xxyyww,f_xxyzzw,f_xxyzww,...)``,
-    ``d7[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_xxyyzzw,f_xxyyzww,f_xxyzzww,f_xyyzzww)``,
-    and ``d8[...,v_x,v_y,v_z,v_w]=f_xxyyzzww``. Derivative-kind counts are
+    $d_7[...,v_x,v_y,v_z,v_w,0/1/2/3]=(f_{xxyyzzw},f_{xxyyzww},f_{xxyzzww},f_{xyyzzww})$,
+    and $d_8[...,v_x,v_y,v_z,v_w]=f_{xxyyzzww}$. Derivative-kind counts are
     ``4,10,16,19,16,10,4,1``. Each leading batch item is solved
     independently.
     Terms are solved independently for each axis subset, ordered by subset
     size; a rank-deficient subset system uses a scaled minimum-norm solution.
-    **Returns:** ``rpoly.order == [3,3,3,3]``. An inconsistent stage or any
+    **Returns:** $\operatorname{order}(R)=(3,3,3,3)$. An inconsistent stage or any
     non-positive reconstructed weight raises an error.
     """
     return _interpolate(4, (f, d1, d2, d3, d4, d5, d6, d7, d8))

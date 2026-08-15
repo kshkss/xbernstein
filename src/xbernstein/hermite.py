@@ -3,7 +3,7 @@ r"""Direct tensor-product Bernstein Hermite interpolation on $[0,1]^d$.
 For parameter order $\mathbf{u}=(u_0,\ldots,u_{d-1})$, every input vertex is
 indexed by $\mathbf{v}\in\{0,1\}^d$ in that same order.  The value argument
 ``f`` stores $f_{\mathbf{v}}=p(\mathbf{v})$ on its final $d$ axes:
-``f[..., v_0, ..., v_{d-1}]``.  Derivative arguments are grouped by total
+$f[...,v_0,\ldots,v_{d-1}]$.  Derivative arguments are grouped by total
 order $s=|\alpha|$, where
 $\alpha=(\alpha_0,\ldots,\alpha_{d-1})$ denotes
 $\partial^\alpha p=\partial_{u_0}^{\alpha_0}\cdots
@@ -13,9 +13,9 @@ them when a group contains multiple $\alpha$ values.
 
 Within a total-order group, multi-indices use descending lexicographic order.
 For example, 2D cubic data is ``(f, d1, d2)`` with
-``d1[..., v_x, v_y, 0] = p_x(v_x, v_y)``,
-``d1[..., v_x, v_y, 1] = p_y(v_x, v_y)``, and
-``d2[..., v_x, v_y] = p_xy(v_x, v_y)``.  Singleton groups omit the final
+$d_1[...,v_x,v_y,0]=p_x(v_x,v_y)$,
+$d_1[...,v_x,v_y,1]=p_y(v_x,v_y)$, and
+$d_2[...,v_x,v_y]=p_{xy}(v_x,v_y)$.  Singleton groups omit the final
 derivative-kind axis.
 
 For degree $n=2r-1$, direct endpoint conversion uses

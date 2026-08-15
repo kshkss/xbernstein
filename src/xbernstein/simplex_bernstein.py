@@ -685,6 +685,9 @@ class _SimplexBernstein(eqx.Module):
 class Bernstein2DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a triangle.
 
+    概要・数学的表現
+    ----------------
+
     The domain is
 
     $$
@@ -702,6 +705,8 @@ class Bernstein2DS(_SimplexBernstein):
     \lambda_0^{\alpha_0}\lambda_1^{\alpha_1}\lambda_2^{\alpha_2}.
     $$
 
+    配列表現・評価
+    --------------
     Evaluation therefore takes three barycentric coordinates.  The packed
     coefficient axis has
     $\binom{n+2}{2}=(n+1)(n+2)/2$ entries, one for each triple
@@ -713,6 +718,9 @@ class Bernstein2DS(_SimplexBernstein):
 
 class Bernstein3DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a tetrahedron.
+
+    概要・数学的表現
+    ----------------
 
     The tetrahedral domain is
 
@@ -731,6 +739,8 @@ class Bernstein3DS(_SimplexBernstein):
     \prod_{i=0}^{3}\lambda_i^{\alpha_i}.
     $$
 
+    配列表現・評価
+    --------------
     Evaluation takes four barycentric coordinates.  The packed coefficient
     axis has $\binom{n+3}{3}$ entries, corresponding to every nonnegative
     quadruple of total degree $n$.
@@ -741,6 +751,9 @@ class Bernstein3DS(_SimplexBernstein):
 
 class Bernstein4DS(_SimplexBernstein):
     r"""Represent a scalar Bernstein polynomial on a 4-simplex.
+
+    概要・数学的表現
+    ----------------
 
     The standard 4-simplex is
 
@@ -760,6 +773,8 @@ class Bernstein4DS(_SimplexBernstein):
     \lambda_0^{\alpha_0}\cdots\lambda_4^{\alpha_4}.
     $$
 
+    配列表現・評価
+    --------------
     Evaluation takes five barycentric coordinates.  The packed coefficient
     axis has $\binom{n+4}{4}$ entries, one for each nonnegative 5-component
     multi-index of total degree $n$.

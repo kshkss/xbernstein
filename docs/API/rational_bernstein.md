@@ -1,5 +1,7 @@
 # Rational Bernstein functions
 
+分子・分母・正重みの数学的定義は [有理 Bernstein ガイド](../guide/rational-functions.md) を参照してください。
+
 ## RationalBernstein
 
 ::: xbernstein.RationalBernstein

@@ -97,6 +97,27 @@ from typing import NamedTuple
 class OptimizeResult(NamedTuple):
     r"""Store an approximation to $\min_{t\in[0,1]}p(t)$ and an associated $t$.
 
+    概要
+    ----
+    ``OptimizeResult(f,x)`` records the value ``f`` and parameter ``x`` of a
+    branch-and-bound approximation to $\min_{\mathbf{u}\in[0,1]^d}p(\mathbf{u})$.
+
+    数学的表現・配列表現
+    --------------------
+    For coefficient shape ``(*batch, ...)``, ``f`` and ``x`` have shape
+    ``(*batch,)`` and share the input floating dtype.  Leading axes are batch
+    axes; no coefficient or parameter axis is stored in this result.
+
+    評価・演算
+    ----------
+    The fields satisfy approximately $f=p(x)$ and are returned without
+    further polynomial operations.
+
+    数学的注意点
+    ------------
+    ``x`` is a coordinate in the relevant domain, not a batch index; each
+    batch item is optimized independently.
+
     ``f`` is the current upper-bound value and ``x`` is the parameter at which
     that value is attained. Both arrays have the same leading batch/value
     shape as the input polynomial.

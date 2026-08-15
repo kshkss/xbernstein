@@ -1,5 +1,7 @@
 # Interpolation
 
+Hermite jet、微分群、次数の考え方は [Hermite 補間ガイド](../guide/hermite-interpolation.md) を参照してください。
+
 ## Linear interpolation
 
 ### linear_interpolate_1d

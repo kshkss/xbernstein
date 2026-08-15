@@ -380,7 +380,7 @@ class RationalBernstein(eqx.Module):
         The operation is repeated ``m`` times. After every step the numerator
         is degree-elevated, if necessary, to share the denominator's Bernstein
         degree; degree elevation changes the representation but not the
-        represented function. ``m=0`` returns ``self`` and a negative ``m`` is
+        represented function. $m=0$ returns ``self`` and a negative ``m`` is
         invalid.
 
         Batch dimensions

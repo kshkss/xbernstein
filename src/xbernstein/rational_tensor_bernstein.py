@@ -30,6 +30,14 @@ def _homogeneous_component(
 class _RationalTensorBernstein(eqx.Module):
     r"""Represent a positive-weight rational tensor-product Bernstein function.
 
+    概要
+    ----
+    The domain is $[0,1]^d$ and the represented function is the rational
+    tensor-product polynomial $R(\mathbf{u})=N(\mathbf{u})/D(\mathbf{u})$.
+
+    数学的表現
+    ----------
+
     For parameter vector
     $\mathbf{u}=(u_0,\ldots,u_{d-1})$, degree vector
     $\mathbf{n}=(n_0,\ldots,n_{d-1})$, and multi-index
@@ -55,8 +63,8 @@ class _RationalTensorBernstein(eqx.Module):
     Because the tensor-product basis is nonnegative and forms a partition of
     unity on $[0,1]^d$, $D(\mathbf{u})>0$ throughout the domain.
 
-    Homogeneous and array layout
-    ----------------------------
+    配列表現
+    ----------
 
     For arrays ``values`` and ``weights`` of shape
     ``(*batch, n_0 + 1, ..., n_{d-1} + 1)``, the stored homogeneous array has
@@ -71,8 +79,8 @@ class _RationalTensorBernstein(eqx.Module):
     axes. All earlier axes are independent batch axes. The leading shapes of
     ``values`` and ``weights`` broadcast; their final $d$ shapes must agree.
 
-    Batch dimensions
-    ----------------
+    評価
+    ----
 
     Only axes before the homogeneous and parameter-degree axes are batch
     axes. For example, these inputs broadcast to batch shape ``(2, 4)`` while
@@ -90,6 +98,8 @@ class _RationalTensorBernstein(eqx.Module):
 
     ```
 
+    演算
+    ----
     Arithmetic broadcasts only these leading axes. Parameter-degree axes are
     combined by Bernstein algebra, not raw-array broadcasting. Rational
     addition, subtraction, and multiplication use denominator products, so
@@ -123,6 +133,14 @@ class _RationalTensorBernstein(eqx.Module):
     'ValueError'
 
     ```
+
+    数学的注意点
+    ------------
+    Partial derivatives are independent-coordinate derivatives, whereas a
+    simplex barycentric derivative would preserve a sum constraint.  Strictly
+    positive weights imply $D(\mathbf{u})>0$ on the cube.  Batch axes precede the
+    homogeneous axis and the final ``d`` coefficient axes; they are not degree
+    axes.
 
     Integration
     -----------
@@ -405,17 +423,17 @@ class _RationalTensorBernstein(eqx.Module):
     def deriv(self, m: int = 1, axis: int = 0):
         r"""Return the exact partial derivative $\partial_{u_a}^mR$.
 
-        With $a=$ ``axis``, one step applies
+        With $a=\text{axis}$, one step applies
 
         $$
         \partial_{u_a}R
         =\frac{(\partial_{u_a}N)D-N(\partial_{u_a}D)}{D^2}.
         $$
 
-        The quotient rule is repeated ``m`` times. After each step, the
+        The quotient rule is repeated $m$ times. After each step, the
         numerator is degree-elevated along any shorter parameter axis so it
         shares the denominator's degree vector; this does not change the
-        represented function. ``m=0`` returns ``self``.
+        represented function. $m=0$ returns ``self``.
 
         Batch dimensions
         ----------------
@@ -457,8 +475,8 @@ class _RationalTensorBernstein(eqx.Module):
     def weight_sensitivity(self) -> "_RationalTensorBernstein":
         r"""Return sensitivities to every tensor-product control weight.
 
-        The returned object represents ``∂R/∂w_i`` for every coefficient
-        multi-index ``i``, with dehomogenized controls held fixed.  Its shape
+        The returned object represents $\partial R/\partial w_{\mathbf{i}}$
+        for every coefficient multi-index $\mathbf{i}$, with dehomogenized controls held fixed.  Its shape
         is ``self.shape + coefficient_shape``: the added trailing batch axes
         select the differentiated coefficient.  Every parameter degree is
         doubled, because each sensitivity is
@@ -504,7 +522,7 @@ class _RationalTensorBernstein(eqx.Module):
     ):
         r"""Split along $u_a=\tau$ and reparameterize both pieces.
 
-        With $a=$ ``axis`` and a new coordinate $s\in[0,1]$, the first result
+        With $a=\text{axis}$ and a new coordinate $s\in[0,1]$, the first result
         represents
 
         $$
@@ -566,7 +584,7 @@ class _RationalTensorBernstein(eqx.Module):
     def slice(self, value: Float[jax.Array, "..."] | float, axis: int = 0):
         r"""Restrict to the coordinate hyperplane $u_a=v$.
 
-        For $a=$ ``axis`` and $v=$ ``value``, the returned function is
+        For $a=\text{axis}$ and $v=\text{value}$, the returned function is
 
         $$
         Q(u_0,\ldots,u_{a-1},u_{a+1},\ldots,u_{d-1})
