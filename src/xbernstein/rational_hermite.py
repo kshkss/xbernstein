@@ -154,7 +154,24 @@ def _solve_subset_one(matrix: jax.Array, right_hand_side: jax.Array):
         jnp.finfo(matrix.dtype).eps,
     )
     scaled_matrix = normalized_matrix / column_scale[None, :]
-    scaled_solution = jnp.linalg.lstsq(scaled_matrix, normalized_rhs, rcond=None)[0]
+    singular_values = jnp.linalg.svd(scaled_matrix, compute_uv=False)
+    rank_tolerance = jnp.finfo(matrix.dtype).eps * jnp.maximum(
+        singular_values[0], 1.0
+    )
+    rank = jnp.sum(singular_values > rank_tolerance)
+
+    def solve_regular(_):
+        return jnp.linalg.solve(scaled_matrix, normalized_rhs)
+
+    def solve_rank_deficient(_):
+        return jnp.linalg.lstsq(scaled_matrix, normalized_rhs, rcond=None)[0]
+
+    scaled_solution = jax.lax.cond(
+        rank == matrix.shape[-1],
+        solve_regular,
+        solve_rank_deficient,
+        operand=None,
+    )
     solution = scaled_solution / column_scale
     residual = normalized_matrix @ solution - normalized_rhs
     residual_tolerance = 10.0 * jnp.sqrt(jnp.finfo(matrix.dtype).eps)
