@@ -136,6 +136,7 @@ def _assemble_system(dimensions: int, derivatives, batch_shape, dtype):
         matrix,
         right_hand_side,
         coefficient_from_jet,
+        value_jet_indices,
         derivative_jet_indices,
     )
 
@@ -205,10 +206,13 @@ def _interpolate(dimensions: int, groups):
         matrix,
         right_hand_side,
         coefficient_from_jet,
+        value_jet_indices,
         derivative_jet_indices,
     ) = _assemble_system(dimensions, derivatives, batch_shape, dtype)
     coefficient_count = 4**dimensions
     solutions = jnp.zeros(batch_shape + (matrix.shape[-1],), dtype=dtype)
+    vertex_values = values[0].reshape(batch_shape + (2**dimensions,))
+    solutions = solutions.at[..., jnp.asarray(value_jet_indices)].set(vertex_values)
     invalid = jnp.array(False)
     for axes in _axis_subsets(dimensions):
         rows, columns = _subset_indices(dimensions, axes, derivative_jet_indices)
