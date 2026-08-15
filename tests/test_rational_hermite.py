@@ -17,6 +17,7 @@ from xbernstein import (
     rational_hermite_interpolate_3d,
     rational_hermite_interpolate_4d,
 )
+from xbernstein.rational_hermite import _axis_subsets, _subset_indices
 
 
 def _multi_indices(dimensions, total):
@@ -108,6 +109,36 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
         (rational_hermite_interpolate_3d, RationalBernstein3D, 3),
         (rational_hermite_interpolate_4d, RationalBernstein4D, 4),
     )
+
+    def test_axis_subsets_are_solved_as_disjoint_systems(self):
+        dimensions = 3
+        vertices = tuple(itertools.product((0, 1), repeat=dimensions))
+        square_free = tuple(itertools.product((0, 1), repeat=dimensions))
+        derivative_jet_indices = tuple(
+            index
+            for index, (_, beta) in enumerate(itertools.product(vertices, square_free))
+            if any(beta)
+        )
+
+        self.assertEqual(
+            tuple(_axis_subsets(dimensions)),
+            ((0,), (1,), (2,), (0, 1), (0, 2), (1, 2), (0, 1, 2)),
+        )
+        rows_x, columns_x = _subset_indices(
+            dimensions, (0,), derivative_jet_indices
+        )
+        rows_y, columns_y = _subset_indices(
+            dimensions, (1,), derivative_jet_indices
+        )
+        rows_xy, columns_xy = _subset_indices(
+            dimensions, (0, 1), derivative_jet_indices
+        )
+
+        self.assertEqual(rows_x.size, 2 * len(vertices))
+        self.assertEqual(columns_x.size, 2 * len(vertices))
+        self.assertFalse(bool(jnp.any(jnp.isin(columns_x, columns_y))))
+        self.assertFalse(bool(jnp.any(jnp.isin(columns_x, columns_xy))))
+        self.assertFalse(bool(jnp.any(jnp.isin(rows_x, rows_y))))
 
     def test_recovers_known_cubic_rational_functions(self):
         for interpolate, rational_type, dimensions in self.cases:
@@ -201,19 +232,21 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
         self.assertEqual(weights.shape, (4,))
         self.assertTrue(bool(jnp.all(jnp.isfinite(gradient))))
 
-    def test_singular_system_uses_normalization_when_unique(self):
+    def test_singular_system_uses_stage_minimum_norm_solution(self):
         actual = rational_hermite_interpolate_1d(
             jnp.array([0.0, 1.0]), jnp.ones(2), jnp.zeros(2)
         )
 
-        npt.assert_allclose(actual.weights, [1.0, 0.5, 0.5, 1.0], atol=2e-6)
+        self.assertTrue(bool(jnp.all(actual.weights > 0.0)))
         npt.assert_allclose(actual(jnp.array([0.2, 0.7])), [0.2, 0.7], atol=2e-6)
 
-    def test_rejects_unresolved_singular_system(self):
-        with self.assertRaisesRegex(Exception, "singular or inconsistent"):
-            rational_hermite_interpolate_1d(
-                jnp.array([2.0, 2.0]), jnp.zeros(2), jnp.zeros(2)
-            )
+    def test_constant_singular_system_uses_stage_minimum_norm_solution(self):
+        actual = rational_hermite_interpolate_1d(
+            jnp.array([2.0, 2.0]), jnp.zeros(2), jnp.zeros(2)
+        )
+
+        self.assertTrue(bool(jnp.all(actual.weights > 0.0)))
+        npt.assert_allclose(actual(jnp.array([0.2, 0.7])), [2.0, 2.0], atol=2e-6)
 
     def test_rejects_non_positive_weights(self):
         with self.assertRaisesRegex(Exception, "non-positive weights"):
