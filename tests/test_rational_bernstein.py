@@ -6,6 +6,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy.testing as npt
+from jaxtyping import TypeCheckError
 
 from xbernstein import (
     Bernstein,
@@ -49,9 +50,9 @@ class RationalBernsteinTest(unittest.TestCase):
         npt.assert_allclose(curve.denominator.c, expected_weights)
 
     def test_constructor_rejects_invalid_shapes_and_weights(self):
-        with self.assertRaisesRegex(ValueError, "must have a coefficient axis"):
+        with self.assertRaisesRegex(TypeCheckError, "values"):
             RationalBernstein(1.0, 1.0)
-        with self.assertRaisesRegex(ValueError, "same coefficient-axis length"):
+        with self.assertRaisesRegex(TypeCheckError, "weights|values"):
             RationalBernstein(jnp.ones(2), jnp.ones(3))
         with self.assertRaisesRegex(eqx.EquinoxRuntimeError, "strictly positive"):
             RationalBernstein(jnp.ones(2), jnp.array([1.0, 0.0]))

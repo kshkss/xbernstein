@@ -2,6 +2,7 @@ import unittest
 
 import jax.numpy as jnp
 import numpy.testing as npt
+from jaxtyping import TypeCheckError
 
 from xbernstein import PiecewiseRationalCurve3D, RationalBernstein
 
@@ -75,7 +76,7 @@ class PiecewiseRationalCurve3DTest(unittest.TestCase):
         npt.assert_allclose(translated.curvatures, curve.curvatures)
 
     def test_rejects_bad_shapes_and_unrepresentable_segments(self):
-        with self.assertRaisesRegex(ValueError, "shape"):
+        with self.assertRaisesRegex(TypeCheckError, "positions"):
             PiecewiseRationalCurve3D(jnp.zeros((2, 2)), jnp.zeros((2, 3)), jnp.zeros((2, 3)))
 
         line = PiecewiseRationalCurve3D(

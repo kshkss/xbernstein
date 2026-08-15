@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
+from jaxtyping import TypeCheckError
 
 from xbernstein import (
     Bernstein,
@@ -76,7 +77,7 @@ class SimplexBernsteinTest(unittest.TestCase):
             with self.subTest(polynomial_type=polynomial_type.__name__):
                 with self.assertRaisesRegex(ValueError, "packed coefficient count"):
                     polynomial_type(jnp.ones(2))
-                with self.assertRaisesRegex(ValueError, "coefficient axis"):
+                with self.assertRaisesRegex(TypeCheckError, "c"):
                     polynomial_type(1.0)
 
     def test_evaluation_matches_multinomial_basis_and_vertices(self):

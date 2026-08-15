@@ -5,6 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy.testing as npt
+from jaxtyping import TypeCheckError
 
 from xbernstein import (
     Bernstein2DS,
@@ -51,9 +52,9 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
                     self.assertIsInstance(function.numerator, polynomial_type)
 
     def test_rejects_invalid_inputs(self):
-        with self.assertRaisesRegex(ValueError, "packed coefficient axis"):
+        with self.assertRaisesRegex(TypeCheckError, "values|weights"):
             RationalBernstein2DS(1.0, 1.0)
-        with self.assertRaisesRegex(ValueError, "same packed coefficient count"):
+        with self.assertRaisesRegex(TypeCheckError, "weights"):
             RationalBernstein2DS(jnp.ones(3), jnp.ones(6))
         with self.assertRaisesRegex(ValueError, "packed coefficient count"):
             RationalBernstein2DS(jnp.ones(2), jnp.ones(2))
