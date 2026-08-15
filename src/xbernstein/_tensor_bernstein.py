@@ -49,7 +49,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
-from jaxtyping import Float, Int, Shaped
+from beartype import beartype
+from jaxtyping import Float, Int, Shaped, jaxtyped
 
 from .bernstein import Bernstein
 
@@ -220,6 +221,7 @@ def _tensor_minimize_jvp(
     return (value, point), (tangent_value, tangent_point)
 
 
+@jaxtyped(typechecker=beartype)
 class _TensorBernstein(eqx.Module):
     r"""Implement $p(\mathbf{u})$ in the tensor-product Bernstein basis.
 

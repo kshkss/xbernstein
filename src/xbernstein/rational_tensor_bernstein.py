@@ -5,9 +5,10 @@ import math
 from typing import ClassVar
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, jaxtyped
 
 from ._tensor_bernstein import (
     _evaluate_tensor_coefficients,
@@ -25,6 +26,7 @@ def _homogeneous_component(
     return jnp.take(h, index, axis=-(dimensions + 1))
 
 
+@jaxtyped(typechecker=beartype)
 class _RationalTensorBernstein(eqx.Module):
     r"""Represent a positive-weight rational tensor-product Bernstein function.
 

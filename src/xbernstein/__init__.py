@@ -88,10 +88,12 @@ __all__ = [
 
 
 import jax
-from jaxtyping import Float
+from beartype import beartype
+from jaxtyping import Float, jaxtyped
 from typing import NamedTuple
 
 
+@jaxtyped(typechecker=beartype)
 class OptimizeResult(NamedTuple):
     r"""Store an approximation to $\min_{t\in[0,1]}p(t)$ and an associated $t$.
 

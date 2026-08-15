@@ -1,9 +1,10 @@
 r"""One-dimensional scalar rational Bernstein functions on $[0,1]$."""
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float
+from jaxtyping import Float, jaxtyped
 
 from .bernstein import Bernstein, _elevate
 
@@ -43,6 +44,7 @@ def _evaluate_homogeneous(
     return numerator / denominator
 
 
+@jaxtyped(typechecker=beartype)
 class RationalBernstein(eqx.Module):
     r"""Represent a scalar rational Bernstein function with positive weights.
 

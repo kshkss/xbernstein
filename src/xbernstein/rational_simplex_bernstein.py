@@ -3,9 +3,10 @@ r"""Positive-weight scalar rational Bernstein functions on simplices."""
 from typing import ClassVar
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Int
+from jaxtyping import Float, Int, jaxtyped
 
 from .rational_bernstein import RationalBernstein, _from_homogeneous
 from .simplex_bernstein import (
@@ -213,6 +214,7 @@ _minimize_rational_3ds = _make_rational_minimizer(3)
 _minimize_rational_4ds = _make_rational_minimizer(4)
 
 
+@jaxtyped(typechecker=beartype)
 class _RationalSimplexBernstein(eqx.Module):
     r"""Represent a positive-weight rational function on a standard simplex.
 

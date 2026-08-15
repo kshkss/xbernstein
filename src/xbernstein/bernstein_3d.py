@@ -1,7 +1,8 @@
 from typing import ClassVar
 
 import jax
-from jaxtyping import Float
+from beartype import beartype
+from jaxtyping import Float, jaxtyped
 
 from ._tensor_bernstein import _TensorBernstein, _tensor_minimize, _tensor_minimize_jvp
 
@@ -23,6 +24,7 @@ def _minimize_jvp(
     return _tensor_minimize_jvp(coefficients, tangent_coefficients, max_steps, eps)
 
 
+@jaxtyped(typechecker=beartype)
 class Bernstein3D(_TensorBernstein):
     r"""Represent a tensor-product Bernstein polynomial on $[0,1]^3$.
 

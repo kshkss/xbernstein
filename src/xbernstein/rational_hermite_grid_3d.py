@@ -3,15 +3,17 @@ r"""Tricubic rational Hermite interpolation on a rectilinear 3D grid."""
 from typing import NamedTuple
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Bool, Float, Int, Shaped
+from jaxtyping import Bool, Float, Int, Shaped, jaxtyped
 
 from .hermite import _multi_indices
 from .rational_hermite import rational_hermite_interpolate_3d
 from .rational_tensor_bernstein import RationalBernstein3D
 
 
+@jaxtyped(typechecker=beartype)
 class GridSegment3D(NamedTuple):
     r"""Store a fixed-capacity decomposition of a segment into grid cells.
 
@@ -25,6 +27,7 @@ class GridSegment3D(NamedTuple):
     valid_mask: Bool[jax.Array, "m"]
 
 
+@jaxtyped(typechecker=beartype)
 class RationalHermiteGrid3D(eqx.Module):
     r"""Store scalar vertex jets on a nonuniform rectilinear 3D grid.
 

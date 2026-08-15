@@ -1,9 +1,10 @@
 r"""Piecewise G² cubic rational Bernstein curves in three dimensions."""
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Shaped
+from jaxtyping import Float, Shaped, jaxtyped
 
 from .rational_bernstein import RationalBernstein
 
@@ -23,6 +24,7 @@ def _solve_two_columns(
     return solution, matrix @ solution - rhs
 
 
+@jaxtyped(typechecker=beartype)
 class PiecewiseRationalCurve3D(eqx.Module):
     r"""Store a chain of 3D G² cubic rational Bernstein curve segments.
 

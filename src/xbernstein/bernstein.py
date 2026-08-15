@@ -45,6 +45,7 @@ degree-$n$ polynomial for every leading index. Evaluating at a scalar preserves
 import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
+from beartype import beartype
 from jaxtyping import Float, jaxtyped
 from beartype import beartype
 import equinox as eqx
@@ -82,6 +83,7 @@ def _elevate(
     return w
 
 
+@jaxtyped(typechecker=beartype)
 class Bernstein(eqx.Module):
     r"""Represent $p(t)=\sum_{i=0}^n c_i B_i^n(t)$ on $[0,1]$.
 

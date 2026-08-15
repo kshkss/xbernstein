@@ -6,10 +6,11 @@ import math
 from typing import ClassVar, Self
 
 import equinox as eqx
+from beartype import beartype
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Float, Int, Shaped
+from jaxtyping import Float, Int, Shaped, jaxtyped
 
 from .bernstein import Bernstein
 
@@ -441,6 +442,7 @@ _minimize_3ds = _make_minimizer(3)
 _minimize_4ds = _make_minimizer(4)
 
 
+@jaxtyped(typechecker=beartype)
 class _SimplexBernstein(eqx.Module):
     r"""Represent a scalar Bernstein polynomial on a standard simplex.
 
