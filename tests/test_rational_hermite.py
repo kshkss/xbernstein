@@ -159,6 +159,16 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
                     atol=tolerance,
                 )
 
+    def test_reproduces_nonzero_vertex_values(self):
+        values = jnp.array([2.0, 5.0])
+        d1 = jnp.array([3.0, 3.0])
+        d2 = jnp.zeros(2)
+
+        actual = rational_hermite_interpolate_1d(values, d1, d2)
+
+        npt.assert_allclose(actual(0.0), values[0], atol=2e-5)
+        npt.assert_allclose(actual(1.0), values[1], atol=2e-5)
+
     def test_reproduces_selected_vertex_derivatives(self):
         values, weights = _source(2)
         groups, expected_jets = _endpoint_data(values, weights)
