@@ -23,6 +23,8 @@ workflows that need Bernstein-basis operations without leaving JAX.
   cubic Hermite patches and traverse 2D–4D grids by line segments.
 - **Piecewise spatial curves** — construct G² cubic rational Bernstein
   segments from 3D node positions, tangent directions, and curvatures.
+- **Piecewise cubic Hermite curves** — construct C¹ continuous vector-valued
+  Bernstein segments from 3D positions and tangent vectors.
 - **Global optimization** — approximate minima and maxima with
   Bernstein-basis branch-and-bound solvers.
 
@@ -82,6 +84,7 @@ many polynomials at once.
 | Hermite grid interpolation | `HermiteGrid1D`, `HermiteGrid2D`, `HermiteGrid3D`, `HermiteGrid4D`, `GridSegment` |
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
 | Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
+| Piecewise 3D C¹ curve | `PiecewiseCurve3D` |
 | Optimization | `minimize`, `maximize` |
 
 Tensor-product classes use one trailing coefficient axis per parameter.
