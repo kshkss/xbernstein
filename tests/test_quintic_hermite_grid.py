@@ -10,6 +10,10 @@ from xbernstein import (
     QuinticHermiteGrid2D,
     QuinticHermiteGrid3D,
     QuinticHermiteGrid4D,
+    quintic_hermite_interpolate_1d,
+    quintic_hermite_interpolate_2d,
+    quintic_hermite_interpolate_3d,
+    quintic_hermite_interpolate_4d,
 )
 
 
@@ -46,6 +50,26 @@ def _quadratic_groups(axes):
     return tuple(groups)
 
 
+def _cell_groups(axes, groups, cell_index):
+    dimension = len(axes)
+    widths = jnp.asarray(
+        [axis[index + 1] - axis[index] for axis, index in zip(axes, cell_index)]
+    )
+    local = []
+    for total, group in enumerate(groups):
+        vertices = group[tuple(slice(index, index + 2) for index in cell_index)]
+        alphas = _multi_indices(dimension, total)
+        scales = jnp.asarray(
+            [jnp.prod(widths ** jnp.asarray(alpha)) for alpha in alphas]
+        )
+        local.append(
+            vertices * scales[0]
+            if len(alphas) == 1
+            else vertices * scales.reshape((1,) * dimension + (len(alphas),))
+        )
+    return tuple(local)
+
+
 class QuinticHermiteGridTest(unittest.TestCase):
     def test_all_dimensions_reproduce_quadratic_tensor_field(self):
         classes = (
@@ -53,6 +77,12 @@ class QuinticHermiteGridTest(unittest.TestCase):
             QuinticHermiteGrid2D,
             QuinticHermiteGrid3D,
             QuinticHermiteGrid4D,
+        )
+        interpolators = (
+            quintic_hermite_interpolate_1d,
+            quintic_hermite_interpolate_2d,
+            quintic_hermite_interpolate_3d,
+            quintic_hermite_interpolate_4d,
         )
         all_axes = (
             jnp.array([0.0, 1.0, 3.0]),
@@ -62,13 +92,27 @@ class QuinticHermiteGridTest(unittest.TestCase):
         )
         point = jnp.array([2.0, 0.25, 0.75, -0.5])
 
-        for dimension, grid_type in enumerate(classes, start=1):
+        reconstruction_atols = (
+            1e-6,
+            1e-4,
+            5e-4,
+            2e-3,
+            5e-3,
+            2e-2,
+            5e-2,
+            2e-1,
+            5e-1,
+        )
+        for dimension, (grid_type, interpolate) in enumerate(
+            zip(classes, interpolators), start=1
+        ):
             with self.subTest(dimension=dimension):
                 axes = all_axes[:dimension]
                 groups = _quadratic_groups(axes)
                 grid = grid_type(*axes, *groups)
                 sample = point[:dimension]
                 expected = jnp.prod(1.0 + sample + sample**2)
+                cell_shape = tuple(axis.size - 1 for axis in axes)
 
                 npt.assert_allclose(grid(sample), expected, atol=2e-4)
                 if dimension == 1:
@@ -83,7 +127,27 @@ class QuinticHermiteGridTest(unittest.TestCase):
                     ),
                     jnp.full(dimension, 5),
                 )
-                npt.assert_allclose(getattr(grid, f"d{2 * dimension}"), groups[-1])
+                self.assertEqual(
+                    grid.coefficients.shape,
+                    cell_shape + (6,) * dimension,
+                )
+                self.assertFalse(hasattr(grid, "groups"))
+
+                cell_index = (1,) + (0,) * (dimension - 1)
+                expected_patch = interpolate(*_cell_groups(axes, groups, cell_index))
+                npt.assert_array_equal(
+                    grid.cell_interpolant(jnp.asarray(cell_index)).c,
+                    expected_patch.c,
+                )
+
+                for total, source in enumerate(groups):
+                    reconstructed = grid.f if total == 0 else getattr(grid, f"d{total}")
+                    npt.assert_allclose(
+                        reconstructed,
+                        source,
+                        rtol=3e-5,
+                        atol=reconstruction_atols[total],
+                    )
                 self.assertEqual(grid.jet_size, 3)
 
     def test_nonuniform_1d_cells_are_c2_in_physical_coordinates(self):
@@ -114,14 +178,20 @@ class QuinticHermiteGridTest(unittest.TestCase):
         expected = 1.0 + 3.0 + 3.0**2
 
         self.assertEqual(grid.shape, (2,))
+        self.assertEqual(grid.coefficients.shape, (2, 2, 6))
         npt.assert_allclose(grid(jnp.array([9.0])), [expected, 2.0 * expected])
-        npt.assert_allclose(grid.d2, batched[2])
+        npt.assert_allclose(grid.d2, batched[2], atol=6e-6)
 
         axes = (axis, jnp.array([0.0, 2.0]), jnp.array([-1.0, 1.0]))
         groups_3d = _quadratic_groups(axes)
         grid_3d = QuinticHermiteGrid3D(*axes, *groups_3d)
-        npt.assert_allclose(grid_3d.d5, groups_3d[5])
-        npt.assert_allclose(grid_3d.d6, groups_3d[6])
+        npt.assert_allclose(grid_3d.d5, groups_3d[5], atol=4e-3)
+        npt.assert_allclose(grid_3d.d6, groups_3d[6], atol=1.2e-2)
+        npt.assert_allclose(
+            jax.jit(lambda: grid_3d.d6)(),
+            groups_3d[6],
+            atol=1.2e-2,
+        )
         with self.assertRaisesRegex(ValueError, "d2 must have shape"):
             QuinticHermiteGrid3D(
                 *axes,
