@@ -1,4 +1,4 @@
-r"""Piecewise G² cubic rational Bernstein curves in three dimensions."""
+r"""Piecewise C¹ and G² cubic rational Bernstein curves in three dimensions."""
 
 import equinox as eqx
 from beartype import beartype
@@ -34,15 +34,14 @@ def _solve_segment(p0, p3, t0, t1, k0, k1) -> RationalBernstein:
     )
     chord_direction = chord / jnp.linalg.vector_norm(chord)
     straight_valid = (
-        jnp.linalg.vector_norm(jnp.cross(t0, chord_direction)) <= tolerance
-    ) & (jnp.linalg.vector_norm(jnp.cross(t1, chord_direction)) <= tolerance) & (
-        jnp.dot(t0, chord_direction) > 0.0
-    ) & (jnp.dot(t1, chord_direction) > 0.0)
+        (jnp.linalg.vector_norm(jnp.cross(t0, chord_direction)) <= tolerance)
+        & (jnp.linalg.vector_norm(jnp.cross(t1, chord_direction)) <= tolerance)
+        & (jnp.dot(t0, chord_direction) > 0.0)
+        & (jnp.dot(t1, chord_direction) > 0.0)
+    )
 
     def make_straight(_):
-        values = jnp.stack(
-            (p0, p0 + chord / 3.0, p0 + 2.0 * chord / 3.0, p3), axis=-1
-        )
+        values = jnp.stack((p0, p0 + chord / 3.0, p0 + 2.0 * chord / 3.0, p3), axis=-1)
         return values, jnp.ones(4, dtype=p0.dtype), jnp.array(False)
 
     def make_curved(_):
@@ -94,9 +93,24 @@ def _solve_segment(p0, p3, t0, t1, k0, k1) -> RationalBernstein:
     return RationalBernstein(values, weights)
 
 
+def _endpoint_speeds(
+    controls: Float[jax.Array, "4 4"],
+) -> tuple[Float[jax.Array, ""], Float[jax.Array, ""]]:
+    """Return Euclidean speed magnitudes at both ends of homogeneous controls."""
+    xyz = controls[:3]
+    weights = controls[3]
+    values = xyz / weights[None, :]
+    start_velocity = 3.0 * weights[1] / weights[0] * (values[:, 1] - values[:, 0])
+    end_velocity = 3.0 * weights[-2] / weights[-1] * (values[:, -1] - values[:, -2])
+    return (
+        jnp.linalg.vector_norm(start_velocity),
+        jnp.linalg.vector_norm(end_velocity),
+    )
+
+
 @jaxtyped(typechecker=beartype)
 class PiecewiseRationalCurve3D(eqx.Module):
-    r"""Store homogeneous Hermite data for a chain of 3D G² rational cubics.
+    r"""Store homogeneous Hermite data for a C¹ chain of 3D G² rational cubics.
 
     The constructor accepts node ``positions``, unit directions ``tangents``,
     and curvature vectors with shape ``(node_count, 3)``. It solves every
@@ -104,6 +118,12 @@ class PiecewiseRationalCurve3D(eqx.Module):
     homogeneous components ``(X,Y,Z,W)``. Euclidean points are
     ``(X/W,Y/W,Z/W)``. The original geometric data are exposed as properties
     computed from the homogeneous representation.
+
+    The first segment keeps its original parameterization and endpoint
+    weights of one. Later segments are reparameterized by endpoint-preserving
+    Mobius maps so Euclidean velocity is continuous at every integer knot.
+    Homogeneous endpoint weights agree across each knot; the final weight is
+    the positive value produced by the left-to-right propagation.
     """
 
     homogeneous_f: Float[jax.Array, "segments 4 2"]
@@ -115,7 +135,9 @@ class PiecewiseRationalCurve3D(eqx.Module):
         tangents: Float[jax.Array, "nodes 3"],
         curvatures: Float[jax.Array, "nodes 3"],
     ):
-        groups = tuple(jnp.asarray(group) for group in (positions, tangents, curvatures))
+        groups = tuple(
+            jnp.asarray(group) for group in (positions, tangents, curvatures)
+        )
         if any(group.ndim != 2 or group.shape[1] != 3 for group in groups):
             raise ValueError(
                 "positions, tangents, and curvatures must each have shape (node_count, 3)"
@@ -144,9 +166,10 @@ class PiecewiseRationalCurve3D(eqx.Module):
             "curve tangents must be non-zero",
         )
         tangents = tangents / tangent_norms[:, None]
-        curvatures = curvatures - jnp.sum(
-            curvatures * tangents, axis=-1, keepdims=True
-        ) * tangents
+        curvatures = (
+            curvatures
+            - jnp.sum(curvatures * tangents, axis=-1, keepdims=True) * tangents
+        )
         segment_lengths = jnp.linalg.vector_norm(jnp.diff(positions, axis=0), axis=-1)
         positions = eqx.error_if(
             positions,
@@ -154,8 +177,8 @@ class PiecewiseRationalCurve3D(eqx.Module):
             "curve segments must have distinct endpoints",
         )
 
-        values = []
-        derivatives = []
+        segment_controls = []
+        endpoint_speeds = []
         for index in range(positions.shape[0] - 1):
             segment = _solve_segment(
                 positions[index],
@@ -168,14 +191,49 @@ class PiecewiseRationalCurve3D(eqx.Module):
             xyz = segment.h[..., 0, :]
             w = segment.h[0, 1, :]
             controls = jnp.concatenate((xyz, w[None, :]), axis=0)
+            segment_controls.append(controls)
+            endpoint_speeds.append(_endpoint_speeds(controls))
+
+        values = []
+        derivatives = []
+        parameter_scale = jnp.array(1.0, dtype=dtype)
+        node_weight = jnp.array(1.0, dtype=dtype)
+        powers = jnp.arange(4, dtype=dtype)
+        for index, controls in enumerate(segment_controls):
+            if index:
+                previous_end_speed = endpoint_speeds[index - 1][1]
+                start_speed = endpoint_speeds[index][0]
+                parameter_scale = previous_end_speed / (parameter_scale * start_speed)
+            next_node_weight = node_weight * parameter_scale**3
+            scales = node_weight * parameter_scale**powers
+            invalid = (
+                ~jnp.isfinite(parameter_scale)
+                | (parameter_scale <= 0.0)
+                | ~jnp.isfinite(node_weight)
+                | (node_weight <= 0.0)
+                | ~jnp.isfinite(next_node_weight)
+                | (next_node_weight <= 0.0)
+                | ~jnp.all(jnp.isfinite(scales))
+                | jnp.any(scales <= 0.0)
+            )
+            parameter_scale = eqx.error_if(
+                parameter_scale,
+                invalid,
+                "curve segments do not admit a finite positive C1 Mobius reparameterization",
+            )
+            controls = controls * scales[None, :]
             values.append(jnp.stack((controls[:, 0], controls[:, -1]), axis=-1))
             derivatives.append(
                 3.0
                 * jnp.stack(
-                    (controls[:, 1] - controls[:, 0], controls[:, -1] - controls[:, -2]),
+                    (
+                        controls[:, 1] - controls[:, 0],
+                        controls[:, -1] - controls[:, -2],
+                    ),
                     axis=-1,
                 )
             )
+            node_weight = next_node_weight
         self.homogeneous_f = jnp.stack(values)
         self.homogeneous_d1 = jnp.stack(derivatives)
 
@@ -246,9 +304,10 @@ class PiecewiseRationalCurve3D(eqx.Module):
         tangents = velocities / jnp.linalg.vector_norm(
             velocities, axis=-1, keepdims=True
         )
-        normal_acceleration = accelerations - jnp.sum(
-            accelerations * tangents, axis=-1, keepdims=True
-        ) * tangents
+        normal_acceleration = (
+            accelerations
+            - jnp.sum(accelerations * tangents, axis=-1, keepdims=True) * tangents
+        )
         return normal_acceleration / jnp.sum(velocities**2, axis=-1, keepdims=True)
 
     def interpolant(self, segment_index: int) -> Shaped[RationalBernstein, ""]:
@@ -269,9 +328,7 @@ class PiecewiseRationalCurve3D(eqx.Module):
         denominator = jnp.broadcast_to(homogeneous[3], numerator.shape)
         return _from_homogeneous(numerator, denominator)
 
-    def translated(
-        self, offset: Float[jax.Array, "3"]
-    ) -> "PiecewiseRationalCurve3D":
+    def translated(self, offset: Float[jax.Array, "3"]) -> "PiecewiseRationalCurve3D":
         """Return a copy translated directly in homogeneous coordinates."""
         offset = jnp.asarray(offset, dtype=self.homogeneous_f.dtype)
         if offset.shape != (3,):
