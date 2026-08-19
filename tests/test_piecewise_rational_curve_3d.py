@@ -12,7 +12,9 @@ def _endpoint_geometry(curve):
     first = curve.deriv()
     second = first.deriv()
     velocities = (first(0.0), first(1.0))
-    tangents = tuple(velocity / jnp.linalg.vector_norm(velocity) for velocity in velocities)
+    tangents = tuple(
+        velocity / jnp.linalg.vector_norm(velocity) for velocity in velocities
+    )
     curvatures = tuple(
         (acceleration - jnp.dot(acceleration, tangent) * tangent)
         / jnp.dot(velocity, velocity)
@@ -50,7 +52,9 @@ class PiecewiseRationalCurve3DTest(unittest.TestCase):
         self.assertEqual(len(jax.tree_util.tree_leaves(curve)), 2)
         npt.assert_allclose(actual.values, source.values, rtol=2e-4, atol=2e-4)
         npt.assert_allclose(actual.weights, source.weights, rtol=2e-4, atol=2e-4)
-        npt.assert_allclose(curve.positions, jnp.stack((source(0.0), source(1.0))), atol=2e-4)
+        npt.assert_allclose(
+            curve.positions, jnp.stack((source(0.0), source(1.0))), atol=2e-4
+        )
         npt.assert_allclose(curve.tangents, tangents, atol=2e-4)
         npt.assert_allclose(curve.curvatures, curvatures, atol=2e-4)
         compiled = jax.jit(
@@ -68,21 +72,63 @@ class PiecewiseRationalCurve3DTest(unittest.TestCase):
 
     def test_shared_nodes_reproduce_g2_data_for_every_segment(self):
         positions = jnp.array(
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [7.0, 0.0, 0.0],
+            ]
         )
         straight_tangent = jnp.array([1.0, 0.0, 0.0])
         curve = PiecewiseRationalCurve3D(
             positions,
-            jnp.stack((straight_tangent, straight_tangent, straight_tangent)),
-            jnp.zeros((3, 3)),
+            jnp.stack((straight_tangent,) * 4),
+            jnp.zeros((4, 3)),
         )
 
-        first = curve.interpolant(0)
+        segments = [curve.interpolant(index) for index in range(3)]
+        first = segments[0]
         npt.assert_allclose(first(0.0), positions[0], atol=2e-4)
         npt.assert_allclose(first(1.0), positions[1], atol=2e-4)
+        npt.assert_allclose(first.weights, jnp.ones_like(first.weights))
+        for left, right in zip(segments[:-1], segments[1:]):
+            npt.assert_allclose(left.weights[..., -1], right.weights[..., 0])
+            npt.assert_allclose(left.deriv()(1.0), right.deriv()(0.0), atol=2e-5)
+        npt.assert_allclose(segments[1].weights[0], [1.0, 0.5, 0.25, 0.125], atol=1e-6)
+        npt.assert_allclose(segments[2].weights, 0.125, atol=1e-6)
         npt.assert_allclose(curve.positions, positions)
-        npt.assert_allclose(curve.tangents, jnp.stack((straight_tangent,) * 3))
-        npt.assert_allclose(curve.curvatures, jnp.zeros((3, 3)), atol=1e-6)
+        npt.assert_allclose(curve.tangents, jnp.stack((straight_tangent,) * 4))
+        npt.assert_allclose(curve.curvatures, jnp.zeros((4, 3)), atol=1e-6)
+
+    def test_curved_segments_are_reparameterized_c1(self):
+        source = _source_curve()
+        parameters = jnp.array([0.0, 0.4, 1.0])
+        positions = jax.vmap(source)(parameters)
+
+        def geometry(parameter):
+            velocity = jax.jacfwd(source)(parameter)
+            acceleration = jax.jacfwd(jax.jacfwd(source))(parameter)
+            tangent = velocity / jnp.linalg.vector_norm(velocity)
+            curvature = (
+                acceleration - jnp.dot(acceleration, tangent) * tangent
+            ) / jnp.dot(velocity, velocity)
+            return tangent, curvature
+
+        geometry_data = [geometry(parameter) for parameter in parameters]
+        tangents = jnp.stack([item[0] for item in geometry_data])
+        curvatures = jnp.stack([item[1] for item in geometry_data])
+        curve = PiecewiseRationalCurve3D(positions, tangents, curvatures)
+        left = curve.interpolant(0)
+        right = curve.interpolant(1)
+
+        npt.assert_allclose(left.weights[..., 0], 1.0)
+        npt.assert_allclose(left.weights[..., -1], 1.0)
+        self.assertGreater(float(jnp.max(jnp.abs(left.weights - 1.0))), 1e-3)
+        npt.assert_allclose(left.weights[..., -1], right.weights[..., 0])
+        npt.assert_allclose(left.deriv()(1.0), right.deriv()(0.0), atol=2e-5)
+        npt.assert_allclose(curve.positions, positions, atol=2e-4)
+        npt.assert_allclose(curve.tangents, tangents, atol=2e-4)
+        npt.assert_allclose(curve.curvatures, curvatures, atol=2e-4)
 
     def test_projects_curvature_and_translates_positions_only(self):
         curve = PiecewiseRationalCurve3D(
@@ -101,14 +147,18 @@ class PiecewiseRationalCurve3DTest(unittest.TestCase):
 
     def test_rejects_bad_shapes_and_unrepresentable_segments(self):
         with self.assertRaisesRegex(TypeCheckError, "positions"):
-            PiecewiseRationalCurve3D(jnp.zeros((2, 2)), jnp.zeros((2, 3)), jnp.zeros((2, 3)))
+            PiecewiseRationalCurve3D(
+                jnp.zeros((2, 2)), jnp.zeros((2, 3)), jnp.zeros((2, 3))
+            )
 
         line = PiecewiseRationalCurve3D(
             jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
             jnp.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
             jnp.zeros((2, 3)),
         )
-        self.assertRaisesRegex(Exception, "outside the curve", lambda: line.interpolant(1))
+        self.assertRaisesRegex(
+            Exception, "outside the curve", lambda: line.interpolant(1)
+        )
 
 
 if __name__ == "__main__":
