@@ -204,6 +204,44 @@ def _interpolate(
     return polynomial_types[dimensions](coefficients)
 
 
+def _endpoint_bezier_coefficients_1d(
+    degree: int,
+    jet_size: int,
+    left_jets: tuple[jax.Array, ...],
+    right_jets: tuple[jax.Array, ...],
+    interior_coefficients: jax.Array,
+) -> jax.Array:
+    r"""Assemble one cell's Bezier coefficients from boundary jets and interior DOFs.
+
+    ``left_jets``/``right_jets`` hold ``jet_size`` derivative orders
+    ``p^{(k)}(0)``/``p^{(k)}(1)`` each shaped ``value_shape``; the boundary
+    controls ``c_i``/``c_{n-i}`` for ``0 <= i < jet_size`` follow the same
+    endpoint-conversion identity used by :func:`_interpolate`. The remaining
+    ``degree + 1 - 2 * jet_size`` interior controls are copied verbatim from
+    ``interior_coefficients`` (shape ``value_shape + (interior_dof_count,)``).
+    Returns an array shaped ``value_shape + (degree + 1,)``.
+    """
+    n, r = degree, jet_size
+    scales = tuple(math.factorial(n - k) / math.factorial(n) for k in range(r))
+
+    columns = []
+    for i in range(r):
+        columns.append(
+            sum(math.comb(i, k) * scales[k] * left_jets[k] for k in range(i + 1))
+        )
+    for j in range(interior_coefficients.shape[-1]):
+        columns.append(interior_coefficients[..., j])
+    for i in reversed(range(r)):
+        columns.append(
+            sum(
+                ((-1) ** k) * math.comb(i, k) * scales[k] * right_jets[k]
+                for k in range(i + 1)
+            )
+        )
+
+    return jnp.stack(columns, axis=-1)
+
+
 @jaxtyped(typechecker=beartype)
 def linear_interpolate_1d(
     f: Float[jax.Array, "*batch 2"],

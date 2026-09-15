@@ -59,6 +59,7 @@ from .c1_grid import (
     P5C1Grid3D,
     P5C1Grid4D,
 )
+from .fem1d import P1C0, P2C0, P3C0, P3C1, P4C1, P5C1, P5C2
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -114,6 +115,13 @@ __all__ = [
     "P5C1Grid2D",
     "P5C1Grid3D",
     "P5C1Grid4D",
+    "P1C0",
+    "P2C0",
+    "P3C0",
+    "P3C1",
+    "P4C1",
+    "P5C1",
+    "P5C2",
     "rational_hermite_interpolate_1d",
     "rational_hermite_interpolate_2d",
     "rational_hermite_interpolate_3d",
