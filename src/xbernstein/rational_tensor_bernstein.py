@@ -849,10 +849,11 @@ def _minimize_jvp(
     hessian = jax.hessian(lambda parameters: _evaluate_rational_tensor(h, parameters))(
         point
     )
-    tangent_point = jax.lax.cond(
-        jnp.any((point == 0.0) | (point == 1.0)),
-        lambda _: jnp.zeros_like(point),
-        lambda _: -jnp.linalg.solve(hessian, tangent_gradient),
-        operand=None,
+    is_boundary = jnp.any((point == 0.0) | (point == 1.0))
+    safe_hessian = jnp.where(is_boundary, jnp.eye(point.shape[-1]), hessian)
+    safe_tangent_gradient = jnp.where(
+        is_boundary, jnp.zeros_like(tangent_gradient), tangent_gradient
     )
+    interior_tangent = -jnp.linalg.solve(safe_hessian, safe_tangent_gradient)
+    tangent_point = jnp.where(is_boundary, jnp.zeros_like(point), interior_tangent)
     return primal, (tangent_value, tangent_point)
