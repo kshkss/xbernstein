@@ -45,6 +45,7 @@ from .hermite_grid import (
 )
 from .piecewise_rational_curve_3d import PiecewiseRationalCurve3D
 from .piecewise_curve_3d import PiecewiseCurve3D
+from .piecewise_quintic_curve_3d import PiecewiseQuinticCurve3D
 from .c1_grid import (
     P3C1Grid1D,
     P3C1Grid2D,
@@ -103,6 +104,7 @@ __all__ = [
     "RationalHermiteGrid3D",
     "PiecewiseRationalCurve3D",
     "PiecewiseCurve3D",
+    "PiecewiseQuinticCurve3D",
     "P3C1Grid1D",
     "P3C1Grid2D",
     "P3C1Grid3D",
