@@ -178,6 +178,7 @@ guidance.
 | Rational simplex function | `RationalBernstein2DS`, `RationalBernstein3DS`, `RationalBernstein4DS` |
 | Interpolation | `linear_interpolate_*d`, `hermite_interpolate_*d`, `quintic_hermite_interpolate_*d`, `rational_hermite_interpolate_*d` |
 | Hermite grid interpolation | `HermiteGrid1D`–`4D`, `QuinticHermiteGrid1D`–`4D`, `GridSegment` |
+| C0 finite-element grid interpolation | `P1C0Grid1D`–`4D`, `P2C0Grid1D`–`4D`, `P3C0Grid1D`–`4D` |
 | Finite-element integration | `C0Element`, `ElementGeometry`, `MappedElement`, `integrate_element`, `integrate_facet` |
 | 1D finite-element interpolation | `P1C0`, `P2C0`, `P3C0`, `P3C1`, `P4C1`, `P5C1`, `P5C2` |
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
