@@ -183,6 +183,7 @@ guidance.
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
 | Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
 | Piecewise 3D C¹ curve | `PiecewiseCurve3D` |
+| Piecewise 3D quintic curve (curvature/torsion) | `PiecewiseQuinticCurve3D` |
 | Optimization | `minimize`, `maximize` |
 
 Tensor-product classes use one trailing coefficient axis per parameter.

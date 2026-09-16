@@ -30,6 +30,9 @@ workflows that need Bernstein-basis operations without leaving JAX.
   segments from 3D node positions, tangent directions, and curvatures.
 - **Piecewise cubic Hermite curves** — construct C¹ continuous vector-valued
   Bernstein segments from 3D positions and tangent vectors.
+- **Piecewise quintic curves** — build a growable chain of degree-5 Bernstein
+  segments from 3D positions and velocities, with curvature vectors and
+  torsion prescribed at each segment endpoint.
 - **Global optimization** — approximate minima and maxima with
   Bernstein-basis branch-and-bound solvers.
 
@@ -92,6 +95,7 @@ many polynomials at once.
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
 | Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
 | Piecewise 3D C¹ curve | `PiecewiseCurve3D` |
+| Piecewise 3D quintic curve (curvature/torsion) | `PiecewiseQuinticCurve3D` |
 | Optimization | `minimize`, `maximize` |
 
 Tensor-product classes use one trailing coefficient axis per parameter.
