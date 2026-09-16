@@ -21,6 +21,9 @@ workflows that need Bernstein-basis operations without leaving JAX.
   rational Hermite interpolants in one to four dimensions.
 - **Rectilinear grid interpolation** — evaluate nonuniform 1D–4D grids of
   cubic Hermite patches and traverse 2D–4D grids by line segments.
+- **C0 finite-element grids** — evaluate nonuniform 1D–4D grids of P1, P2, or
+  P3 tensor-product Bernstein elements sharing control points across cell
+  faces, and traverse 2D–4D grids by line segments.
 - **Piecewise spatial curves** — construct G² cubic rational Bernstein
   segments from 3D node positions, tangent directions, and curvatures.
 - **Piecewise cubic Hermite curves** — construct C¹ continuous vector-valued
@@ -82,6 +85,7 @@ many polynomials at once.
 | Rational simplex function | `RationalBernstein2DS`, `RationalBernstein3DS`, `RationalBernstein4DS` |
 | Interpolation | `linear_interpolate_*d`, `hermite_interpolate_*d`, `quintic_hermite_interpolate_*d`, `rational_hermite_interpolate_*d` |
 | Hermite grid interpolation | `HermiteGrid1D`–`4D`, `QuinticHermiteGrid1D`–`4D`, `GridSegment` |
+| C0 finite-element grid interpolation | `P1C0Grid1D`–`4D`, `P2C0Grid1D`–`4D`, `P3C0Grid1D`–`4D` |
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
 | Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
 | Piecewise 3D C¹ curve | `PiecewiseCurve3D` |
