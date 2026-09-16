@@ -220,6 +220,27 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
         self.assertEqual(batched_result.x.shape, (2, 3))
         npt.assert_allclose(batched_result.f, [0.0, 1.0])
 
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        values = jnp.array([0.0, 1.0, 2.0])
+        weights = jnp.array([1.0, 2.0, 1.0])
+        direction = jnp.ones_like(values) * 0.1
+        result_weights = jnp.array([0.3, 0.3, 0.4])
+
+        def value(controls):
+            return jnp.vdot(
+                minimize(
+                    RationalBernstein2DS(controls, weights), max_steps=20
+                ).x,
+                result_weights,
+            )
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()
