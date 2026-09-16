@@ -579,12 +579,13 @@ def _minimize_jvp(
 
     # x*=0 or x*=1 の場合は境界最小とみなし、argmin の感度は 0 とする。
     # それ以外（内部点）のみ、暗黙微分で dx を計算する。
-    tangent_x = jax.lax.cond(
-        jnp.equal(x_star, 0.0) | jnp.equal(x_star, 1.0),
-        lambda _: jnp.zeros_like(x_star),
-        lambda _: -dp1(x_star) / p2(x_star),
-        operand=None,
-    )
+    # lax.cond は discrete-branch predicate を stop_gradient で切るため、
+    # reverse-mode の transpose が定義されずネストした逆伝播で失敗する。
+    # jnp.where なら両分岐を計算して select するだけなので transpose 可能。
+    is_boundary = jnp.equal(x_star, 0.0) | jnp.equal(x_star, 1.0)
+    safe_p2 = jnp.where(is_boundary, 1.0, p2(x_star))
+    interior_tangent = -dp1(x_star) / safe_p2
+    tangent_x = jnp.where(is_boundary, jnp.zeros_like(x_star), interior_tangent)
 
     tangent_out = (tangent_f, tangent_x)
     return primal_out, tangent_out
