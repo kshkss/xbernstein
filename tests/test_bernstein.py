@@ -320,6 +320,25 @@ class BernsteinFormulaTest(unittest.TestCase):
 
         npt.assert_allclose(actual, expected, atol=1e-5)
 
+    def test_minimize_reverse_mode_outer_nested_differentiation_at_boundary(self):
+        # 次数1多項式は境界最小点で p''(x*) == 0 になるため、safe_p2 の
+        # ゼロ除算ガードを実際に踏む。ガードが無いと jnp.where の未選択分岐が
+        # NaN/Inf を漏らし、reverse-mode のネスト微分が壊れる。
+        coefficients = jnp.array([0.0, 1.0])
+        direction = jnp.array([0.4, -0.6])
+
+        def value(coefficients):
+            return minimize(Bernstein(coefficients)).f
+
+        expected = jax.hessian(value)(coefficients) @ direction
+
+        actual = jax.grad(
+            lambda c: jnp.vdot(jax.grad(value)(c), direction)
+        )(coefficients)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

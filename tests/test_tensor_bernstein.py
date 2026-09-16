@@ -281,6 +281,34 @@ class TensorBernsteinTest(unittest.TestCase):
                     jnp.array([1.0, -1.0]),
                 )
 
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        for polynomial_type, dimensions in (
+            (Bernstein2D, 2),
+            (Bernstein3D, 3),
+            (Bernstein4D, 4),
+        ):
+            coefficients = jnp.zeros((2,) * dimensions).at[(1,) * dimensions].set(-1.0)
+            direction = jnp.ones_like(coefficients) * 0.1
+            weights = jnp.linspace(0.1, 1.0, dimensions)
+
+            def value(coefficients, weights=weights):
+                return jnp.vdot(
+                    minimize(polynomial_type(coefficients), max_steps=20).x, weights
+                )
+
+            with self.subTest(polynomial_type=polynomial_type.__name__):
+                expected = jax.jvp(
+                    lambda c: jax.grad(value)(c),
+                    (coefficients,),
+                    (direction,),
+                )[1]
+
+                actual = jax.grad(
+                    lambda c: jnp.vdot(jax.grad(value)(c), direction)
+                )(coefficients)
+
+                npt.assert_allclose(actual, expected, atol=1e-5)
+
     def test_segment_matches_tensor_evaluation(self):
         cases = (
             (Bernstein2D, (3, 2), jnp.array([0.1, 0.2]), jnp.array([0.8, 0.9])),
