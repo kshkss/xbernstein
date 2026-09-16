@@ -305,6 +305,21 @@ class BernsteinFormulaTest(unittest.TestCase):
         npt.assert_allclose(values, jnp.array([0.0, 1.0]), atol=1e-6)
         npt.assert_allclose(tangent_values, jnp.array([0.1, 0.2]), atol=1e-6)
 
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        coefficients = jnp.array([1.0, -2.0, 1.0, 3.0])
+        direction = jnp.array([0.3, -0.1, 0.7, 0.2])
+
+        def value(coefficients):
+            return minimize(Bernstein(coefficients)).f
+
+        expected = jax.hessian(value)(coefficients) @ direction
+
+        actual = jax.grad(
+            lambda c: jnp.vdot(jax.grad(value)(c), direction)
+        )(coefficients)
+
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()
