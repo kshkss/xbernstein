@@ -228,6 +228,25 @@ class TensorBernsteinTest(unittest.TestCase):
                     jnp.array([-1.0, 1.0]),
                 )
 
+    def test_minimize_degree_two_interior_minimum_reports_consistent_x_and_f(self):
+        # Regression test for issue #5: branch-and-bound previously lost the
+        # right child's upper bound on any second-level split, so `x` drifted
+        # to points unrelated to the polynomial while `f` still tracked a
+        # plausible-looking value, breaking `f == poly(*x)`.
+        a, b = 0.3, 0.4
+        f_u = jnp.array([a**2, a**2 - a, (1 - a) ** 2])
+        f_v = jnp.array([b**2, b**2 - b, (1 - b) ** 2])
+        coefficients = f_u[:, None] + f_v[None, :]
+        polynomial = Bernstein2D(coefficients)
+
+        result = minimize(polynomial, max_steps=200, eps=1e-8)
+
+        npt.assert_allclose(result.x, jnp.array([a, b]), atol=1e-3)
+        npt.assert_allclose(result.f, 0.0, atol=1e-6)
+        npt.assert_allclose(
+            polynomial(*result.x), result.f, rtol=1e-5, atol=1e-6
+        )
+
     def test_maximize_tensor_polynomials_and_jvp(self):
         for polynomial_type, dimensions in (
             (Bernstein2D, 2),
