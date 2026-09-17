@@ -605,6 +605,36 @@ class RationalTensorBernsteinTest(unittest.TestCase):
         self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
         npt.assert_allclose(actual, expected, atol=1e-5)
 
+    def test_minimize_boundary_hessian_fallback_preserves_dtype(self):
+        # Regression test for issue #4: the boundary branch's
+        # jnp.eye(...) fallback for the Hessian solve had no dtype=, so it
+        # silently followed jax_enable_x64's ambient default float dtype
+        # instead of the surrounding computation's dtype. With float32
+        # controls under jax_enable_x64=True, this mismatch made the
+        # custom_jvp rule produce a float64 tangent for a float32 primal,
+        # raising a TypeError.
+        values, weights = self.controls(2)
+        result_weights = jnp.array([0.3, 0.7], dtype=jnp.float32)
+
+        def value(control_values):
+            return jnp.vdot(
+                minimize(
+                    RationalBernstein2D(control_values, weights),
+                    max_steps=30,
+                    eps=1e-7,
+                ).x,
+                result_weights,
+            )
+
+        previous = jax.config.jax_enable_x64
+        jax.config.update("jax_enable_x64", True)
+        try:
+            tangent = jax.grad(value)(values)
+        finally:
+            jax.config.update("jax_enable_x64", previous)
+
+        self.assertEqual(tangent.dtype, jnp.float32)
+
 
 if __name__ == "__main__":
     unittest.main()
