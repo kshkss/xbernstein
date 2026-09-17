@@ -201,7 +201,9 @@ def _make_rational_minimizer(dimensions: int):
                 homogeneous, chart(coordinates), dimensions
             )
         )(safe_y)
-        safe_hessian = jnp.where(is_boundary, jnp.eye(dimensions), hessian)
+        safe_hessian = jnp.where(
+            is_boundary, jnp.eye(dimensions, dtype=hessian.dtype), hessian
+        )
         safe_tangent_gradient = jnp.where(
             is_boundary, jnp.zeros_like(tangent_gradient), tangent_gradient
         )
