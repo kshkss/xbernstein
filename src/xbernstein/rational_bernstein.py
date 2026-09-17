@@ -581,10 +581,8 @@ def _minimize_jvp(
             parameter
         )
     )(x_star)
-    tangent_x = jax.lax.cond(
-        jnp.equal(x_star, 0.0) | jnp.equal(x_star, 1.0),
-        lambda _: jnp.zeros_like(x_star),
-        lambda _: -tangent_first / second,
-        operand=None,
-    )
+    is_boundary = jnp.equal(x_star, 0.0) | jnp.equal(x_star, 1.0)
+    safe_second = jnp.where(is_boundary, 1.0, second)
+    interior_tangent = -tangent_first / safe_second
+    tangent_x = jnp.where(is_boundary, jnp.zeros_like(x_star), interior_tangent)
     return primal, (tangent_f, tangent_x)

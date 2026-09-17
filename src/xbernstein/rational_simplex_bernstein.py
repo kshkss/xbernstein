@@ -179,13 +179,19 @@ def _make_rational_minimizer(dimensions: int):
             return jnp.concatenate((y, jnp.atleast_1d(1.0 - jnp.sum(y))))
 
         y = point[:-1]
+        # chart の反変換は境界(y の成分が0)で二階微分が特異になるため、
+        # 境界時は Hessian/勾配自体を単体内部の安全な点で評価する。さらに
+        # 次数1多項式のように内部でも Hessian が恒等的に特異な場合に備えて
+        # solve の対象行列/右辺も単位行列/ゼロで置き換える。
+        is_boundary = jnp.any(point == 0.0)
+        safe_y = jnp.where(is_boundary, jnp.full_like(y, 1.0 / (dimensions + 1)), y)
 
         def gradient(h):
             return jax.grad(
                 lambda coordinates: _evaluate_rational_simplex(
                     h, chart(coordinates), dimensions
                 )
-            )(y)
+            )(safe_y)
 
         tangent_gradient = jax.jvp(
             gradient, (homogeneous,), (tangent_homogeneous,)
@@ -194,13 +200,15 @@ def _make_rational_minimizer(dimensions: int):
             lambda coordinates: _evaluate_rational_simplex(
                 homogeneous, chart(coordinates), dimensions
             )
-        )(y)
-        tangent_y = jax.lax.cond(
-            jnp.any(point == 0.0),
-            lambda _: jnp.zeros_like(y),
-            lambda _: -jnp.linalg.solve(hessian, tangent_gradient),
-            operand=None,
+        )(safe_y)
+        safe_hessian = jnp.where(
+            is_boundary, jnp.eye(dimensions, dtype=hessian.dtype), hessian
         )
+        safe_tangent_gradient = jnp.where(
+            is_boundary, jnp.zeros_like(tangent_gradient), tangent_gradient
+        )
+        interior_tangent = -jnp.linalg.solve(safe_hessian, safe_tangent_gradient)
+        tangent_y = jnp.where(is_boundary, jnp.zeros_like(y), interior_tangent)
         tangent_point = jnp.concatenate(
             (tangent_y, jnp.atleast_1d(-jnp.sum(tangent_y)))
         )
