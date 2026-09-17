@@ -165,7 +165,7 @@ def _tensor_minimize(
         point = jnp.where(replace, candidate_points[candidate_index], point)
         next_index = step + 1
         lower = lower.at[next_index].set(lo.at[axis].set(midpoint[axis]))
-        upper = upper.at[index].set(hi.at[axis].set(midpoint[axis]))
+        upper = upper.at[index].set(hi.at[axis].set(midpoint[axis])).at[next_index].set(hi)
         control = control.at[index].set(left).at[next_index].set(right)
         bounds = bounds.at[index].set(jnp.min(left)).at[next_index].set(jnp.min(right))
         return lower, upper, control, bounds, value, point, step + 1
