@@ -212,12 +212,15 @@ def _tensor_minimize_jvp(
             for row in range(dimensions)
         ]
     )
-    tangent_point = jax.lax.cond(
-        jnp.any((point == 0.0) | (point == 1.0)),
-        lambda _: jnp.zeros_like(point),
-        lambda _: -jnp.linalg.solve(hessian, gradient_tangent),
-        operand=None,
+    is_boundary = jnp.any((point == 0.0) | (point == 1.0))
+    safe_hessian = jnp.where(
+        is_boundary, jnp.eye(dimensions, dtype=hessian.dtype), hessian
     )
+    safe_gradient_tangent = jnp.where(
+        is_boundary, jnp.zeros_like(gradient_tangent), gradient_tangent
+    )
+    interior_tangent = -jnp.linalg.solve(safe_hessian, safe_gradient_tangent)
+    tangent_point = jnp.where(is_boundary, jnp.zeros_like(point), interior_tangent)
     return (value, point), (tangent_value, tangent_point)
 
 

@@ -279,6 +279,45 @@ class RationalBernsteinTest(unittest.TestCase):
         npt.assert_allclose(tangent_result.f, expected_f, rtol=1e-5, atol=1e-6)
         npt.assert_allclose(tangent_result.x, expected_x, rtol=1e-4, atol=1e-5)
 
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        weights = jnp.array([1.0, 2.0, 1.0])
+        numerator = jnp.array([0.09, -0.21, 0.49])
+        values = numerator / weights
+        direction = jnp.array([0.2, -0.4, 0.7])
+
+        def value(control_values):
+            return minimize(
+                RationalBernstein(control_values, weights),
+                max_steps=100,
+                eps=1e-7,
+            ).x
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_minimize_reverse_mode_outer_nested_differentiation_at_boundary(self):
+        # 等重みの次数1曲線は境界最小点で second == 0 になるため、
+        # safe_second のゼロ除算ガードを実際に踏む。
+        values = jnp.array([0.0, 1.0])
+        weights = jnp.array([1.0, 1.0])
+        direction = jnp.array([0.3, -0.5])
+
+        def value(control_values):
+            return minimize(
+                RationalBernstein(control_values, weights),
+                max_steps=20,
+            ).x
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
 
 class RationalTensorBernsteinTest(unittest.TestCase):
     cases = (
@@ -517,6 +556,84 @@ class RationalTensorBernsteinTest(unittest.TestCase):
         )
         npt.assert_allclose(tangent.f, 1.0, atol=1e-5)
         npt.assert_allclose(tangent.x, jnp.zeros(2), atol=1e-5)
+
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        x_coefficients = jnp.array([0.09, -0.21, 0.49])
+        y_coefficients = jnp.array([0.16, -0.24, 0.36])
+        values = x_coefficients[:, None] + y_coefficients[None, :]
+        weights = jnp.ones_like(values)
+        direction = jnp.ones_like(values) * 0.1
+        result_weights = jnp.array([0.3, 0.7])
+
+        def value(control_values):
+            return jnp.vdot(
+                minimize(
+                    RationalBernstein2D(control_values, weights),
+                    max_steps=100,
+                    eps=1e-7,
+                ).x,
+                result_weights,
+            )
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_minimize_reverse_mode_outer_nested_differentiation_at_boundary(self):
+        # controls(2) は次数1の rational tensor で、最小点が原点(角/境界)になる。
+        # safe_hessian/safe_tangent_gradient の境界ガードを実際に踏む。
+        values, weights = self.controls(2)
+        direction = jnp.ones_like(values) * 0.1
+        result_weights = jnp.array([0.3, 0.7])
+
+        def value(control_values):
+            return jnp.vdot(
+                minimize(
+                    RationalBernstein2D(control_values, weights),
+                    max_steps=30,
+                    eps=1e-7,
+                ).x,
+                result_weights,
+            )
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_minimize_boundary_hessian_fallback_preserves_dtype(self):
+        # Regression test for issue #4: the boundary branch's
+        # jnp.eye(...) fallback for the Hessian solve had no dtype=, so it
+        # silently followed jax_enable_x64's ambient default float dtype
+        # instead of the surrounding computation's dtype. With float32
+        # controls under jax_enable_x64=True, this mismatch made the
+        # custom_jvp rule produce a float64 tangent for a float32 primal,
+        # raising a TypeError.
+        values, weights = self.controls(2)
+        result_weights = jnp.array([0.3, 0.7], dtype=jnp.float32)
+
+        def value(control_values):
+            return jnp.vdot(
+                minimize(
+                    RationalBernstein2D(control_values, weights),
+                    max_steps=30,
+                    eps=1e-7,
+                ).x,
+                result_weights,
+            )
+
+        previous = jax.config.jax_enable_x64
+        jax.config.update("jax_enable_x64", True)
+        try:
+            tangent = jax.grad(value)(values)
+        finally:
+            jax.config.update("jax_enable_x64", previous)
+
+        self.assertEqual(tangent.dtype, jnp.float32)
 
 
 if __name__ == "__main__":

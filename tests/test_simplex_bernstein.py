@@ -253,6 +253,76 @@ class SimplexBernsteinTest(unittest.TestCase):
         self.assertEqual(batched_result.x.shape, (2, 3))
         npt.assert_allclose(batched_result.f, [0.0, 1.0], atol=1e-6)
 
+    def test_minimize_supports_reverse_mode_outer_nested_differentiation(self):
+        x = Bernstein2DS(jnp.array([1.0, 0.0, 0.0]))
+        y = Bernstein2DS(jnp.array([0.0, 1.0, 0.0]))
+        constant_x = Bernstein2DS(jnp.array([0.2]))
+        constant_y = Bernstein2DS(jnp.array([0.3]))
+        quadratic = (x - constant_x) * (x - constant_x) + (
+            y - constant_y
+        ) * (y - constant_y)
+        direction = jnp.ones_like(quadratic.c) * 0.1
+        weights = jnp.array([0.2, 0.3, 0.5])
+
+        def value(c):
+            return jnp.vdot(
+                minimize(Bernstein2DS(c), max_steps=200, eps=1e-6).x, weights
+            )
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (quadratic.c,), (direction,))[
+            1
+        ]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
+            quadratic.c
+        )
+
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_minimize_reverse_mode_outer_nested_differentiation_at_boundary(self):
+        # 頂点(重心座標のいずれかが0)では chart の反変換による Hessian が
+        # 特異になるため、safe_y による境界時の代替評価が必要になる。
+        coefficients = jnp.arange(3, dtype=jnp.float32)
+        direction = jnp.ones_like(coefficients) * 0.1
+        weights = jnp.array([0.3, 0.3, 0.4])
+
+        def value(c):
+            return jnp.vdot(minimize(Bernstein2DS(c), max_steps=20).x, weights)
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (coefficients,), (direction,))[
+            1
+        ]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
+            coefficients
+        )
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_minimize_boundary_hessian_fallback_preserves_dtype(self):
+        # Regression test for issue #4: the boundary branch's
+        # jnp.eye(...) fallback for the Hessian solve had no dtype=, so it
+        # silently followed jax_enable_x64's ambient default float dtype
+        # instead of the surrounding computation's dtype. With float32
+        # coefficients under jax_enable_x64=True, this mismatch made the
+        # custom_jvp rule produce a float64 tangent for a float32 primal,
+        # raising a TypeError.
+        coefficients = jnp.arange(3, dtype=jnp.float32)
+        weights = jnp.array([0.3, 0.3, 0.4], dtype=jnp.float32)
+
+        def value(c):
+            return jnp.vdot(minimize(Bernstein2DS(c), max_steps=20).x, weights)
+
+        previous = jax.config.jax_enable_x64
+        jax.config.update("jax_enable_x64", True)
+        try:
+            tangent = jax.grad(value)(coefficients)
+        finally:
+            jax.config.update("jax_enable_x64", previous)
+
+        self.assertEqual(tangent.dtype, jnp.float32)
+
 
 if __name__ == "__main__":
     unittest.main()
