@@ -213,7 +213,9 @@ def _tensor_minimize_jvp(
         ]
     )
     is_boundary = jnp.any((point == 0.0) | (point == 1.0))
-    safe_hessian = jnp.where(is_boundary, jnp.eye(dimensions), hessian)
+    safe_hessian = jnp.where(
+        is_boundary, jnp.eye(dimensions, dtype=hessian.dtype), hessian
+    )
     safe_gradient_tangent = jnp.where(
         is_boundary, jnp.zeros_like(gradient_tangent), gradient_tangent
     )
