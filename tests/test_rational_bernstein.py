@@ -298,6 +298,26 @@ class RationalBernsteinTest(unittest.TestCase):
 
         npt.assert_allclose(actual, expected, atol=1e-5)
 
+    def test_minimize_reverse_mode_outer_nested_differentiation_at_boundary(self):
+        # 等重みの次数1曲線は境界最小点で second == 0 になるため、
+        # safe_second のゼロ除算ガードを実際に踏む。
+        values = jnp.array([0.0, 1.0])
+        weights = jnp.array([1.0, 1.0])
+        direction = jnp.array([0.3, -0.5])
+
+        def value(control_values):
+            return minimize(
+                RationalBernstein(control_values, weights),
+                max_steps=20,
+            ).x
+
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (values,), (direction,))[1]
+
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(values)
+
+        self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
+
 
 class RationalTensorBernsteinTest(unittest.TestCase):
     cases = (

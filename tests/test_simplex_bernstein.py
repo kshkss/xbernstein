@@ -289,11 +289,16 @@ class SimplexBernsteinTest(unittest.TestCase):
         def value(c):
             return jnp.vdot(minimize(Bernstein2DS(c), max_steps=20).x, weights)
 
+        expected = jax.jvp(lambda c: jax.grad(value)(c), (coefficients,), (direction,))[
+            1
+        ]
+
         actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
             coefficients
         )
 
         self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
+        npt.assert_allclose(actual, expected, atol=1e-5)
 
 
 if __name__ == "__main__":
