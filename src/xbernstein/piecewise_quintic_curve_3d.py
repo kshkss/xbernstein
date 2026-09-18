@@ -1,17 +1,17 @@
 r"""Piecewise C¹ quintic 3D curves parameterized by curvature and torsion.
 
 Each node carries a position and a velocity (the shared C¹ Hermite jet used
-by :class:`~xbernstein.fem1d.P5C1`). Each segment additionally carries, at
-both of its ends, a curvature vector and a scalar torsion value. Position and
-velocity determine four of a segment's six quintic Bezier controls exactly as
-:class:`~xbernstein.fem1d.P5C1` already does; the remaining two free controls
-(:attr:`P5C1.interior_coefficients`) are solved here so that the assembled
-segment reproduces the requested curvature vector and torsion at each of its
-own endpoints.
+by :class:`~xbernstein.c1_grid.P5C1Grid1D`). Each segment additionally
+carries, at both of its ends, a curvature vector and a scalar torsion value.
+Position and velocity determine four of a segment's six quintic Bezier
+controls exactly as :class:`~xbernstein.c1_grid.P5C1Grid1D` already does; the
+remaining two free controls (its ``interior_coefficients``) are solved here
+so that the assembled segment reproduces the requested curvature vector and
+torsion at each of its own endpoints.
 
 Because those two free controls are independent per segment, only position
 and velocity are guaranteed continuous across a shared node (matching
-``P5C1``'s own "C1" name): curvature and torsion may jump between two
+``P5C1Grid1D``'s own "C1" name): curvature and torsion may jump between two
 segments that meet at the same point.
 """
 
@@ -21,7 +21,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, jaxtyped
 
-from .fem1d import P5C1
+from .c1_grid import P5C1Grid1D
 
 
 def _orthogonal(
@@ -35,9 +35,9 @@ def _solve_quintic_segment_interior(p0, v0, p1, v1, kappa0, tau0, kappa1, tau1):
     r"""Solve one segment's two free quintic Bezier controls.
 
     ``p0, v0, p1, v1`` fix the four boundary controls
-    ``c0, c1, c4, c5`` exactly as :class:`~xbernstein.fem1d.P5C1` does. The
-    two free controls ``c2, c3`` are chosen so that the resulting degree-5
-    Bezier segment has curvature vector ``kappa0``/``kappa1`` (classical,
+    ``c0, c1, c4, c5`` exactly as :class:`~xbernstein.c1_grid.P5C1Grid1D`
+    does. The two free controls ``c2, c3`` are chosen so that the resulting
+    degree-5 Bezier segment has curvature vector ``kappa0``/``kappa1`` (classical,
     speed-independent ``normal_acceleration / |velocity|^2``) and geometric
     torsion ``tau0``/``tau1`` at ``t=0``/``t=1``.
 
@@ -125,9 +125,9 @@ class PiecewiseQuinticCurve3D(eqx.Module):
     ends of the segment. :meth:`append` grows the curve by one point and one
     segment, returning a new instance rather than mutating this one.
 
-    :meth:`to_p5c1` assembles the stored data into a
-    :class:`~xbernstein.fem1d.P5C1` for evaluation; :meth:`__call__` does so
-    and evaluates in one step.
+    :meth:`to_p5c1grid1d` assembles the stored data into a
+    :class:`~xbernstein.c1_grid.P5C1Grid1D` for evaluation; :meth:`__call__`
+    does so and evaluates in one step.
     """
 
     positions: Float[jax.Array, "nodes 3"]
@@ -283,14 +283,11 @@ class PiecewiseQuinticCurve3D(eqx.Module):
         """Return the number of segments."""
         return self.node_count - 1
 
-    def to_p5c1(self) -> P5C1:
-        """Assemble the stored data into a :class:`~xbernstein.fem1d.P5C1`."""
+    def to_p5c1grid1d(self) -> P5C1Grid1D:
+        """Assemble the stored data into a :class:`~xbernstein.c1_grid.P5C1Grid1D`."""
         node_count = self.node_count
         segment_count = self.segment_count
         nodes = jnp.arange(node_count, dtype=self.positions.dtype)
-        connectivity = jnp.stack(
-            (jnp.arange(segment_count), jnp.arange(1, segment_count + 1)), axis=-1
-        )
         c2, c3 = jax.vmap(_solve_quintic_segment_interior)(
             self.positions[:-1],
             self.velocities[:-1],
@@ -301,9 +298,61 @@ class PiecewiseQuinticCurve3D(eqx.Module):
             self.curvature_ends,
             self.torsion_ends,
         )
-        interior_coefficients = jnp.stack((c2, c3), axis=-1)
-        return P5C1(nodes, connectivity, self.positions, self.velocities, interior_coefficients)
+        dof_size = 5 * segment_count + 1
+        segment_index = jnp.arange(segment_count)
+        interior_coefficients = jnp.zeros((3, dof_size), dtype=self.positions.dtype)
+        interior_coefficients = interior_coefficients.at[:, segment_index * 5 + 2].set(c2.T)
+        interior_coefficients = interior_coefficients.at[:, segment_index * 5 + 3].set(c3.T)
+        return P5C1Grid1D(
+            nodes, self.positions.T, self.velocities.T, interior_coefficients
+        )
 
     def __call__(self, point):
         """Evaluate the assembled curve at ``point``."""
-        return self.to_p5c1()(point)
+        grid = self.to_p5c1grid1d()
+        point = jnp.asarray(point, dtype=self.positions.dtype)
+        flat = point.reshape(-1)
+        values = jax.vmap(lambda t: grid(t[None]))(flat)
+        return values.reshape(point.shape + (3,))
+
+    def _frenet_frame(self, grid, t):
+        """Return the unit tangent, principal normal, and binormal at scalar ``t``."""
+        t_arr = t[None]
+        cell = grid.cell_index(t_arr)
+        local = grid._local_coordinates(t_arr, cell)
+        poly = grid.cell_interpolant(cell)
+        velocity = poly.deriv(1)(*local)
+        acceleration = poly.deriv(2)(*local)
+
+        tangent = velocity / jnp.linalg.vector_norm(velocity)
+        normal_component = acceleration - jnp.dot(acceleration, tangent) * tangent
+        normal_norm = jnp.linalg.vector_norm(normal_component)
+        tolerance = 256.0 * jnp.finfo(self.positions.dtype).eps
+        normal_component = eqx.error_if(
+            normal_component,
+            normal_norm <= tolerance,
+            "the principal normal and binormal are undefined where the curve "
+            "has zero curvature",
+        )
+        normal = normal_component / normal_norm
+        binormal = jnp.cross(tangent, normal)
+        return tangent, normal, binormal
+
+    def _evaluate_frenet(self, point, index):
+        grid = self.to_p5c1grid1d()
+        point = jnp.asarray(point, dtype=self.positions.dtype)
+        flat = point.reshape(-1)
+        vectors = jax.vmap(lambda t: self._frenet_frame(grid, t)[index])(flat)
+        return vectors.reshape(point.shape + (3,))
+
+    def tangent(self, point):
+        """Return the unit tangent vector at ``point``."""
+        return self._evaluate_frenet(point, 0)
+
+    def normal(self, point):
+        """Return the unit principal normal vector at ``point``."""
+        return self._evaluate_frenet(point, 1)
+
+    def binormal(self, point):
+        """Return the unit binormal vector at ``point``."""
+        return self._evaluate_frenet(point, 2)
