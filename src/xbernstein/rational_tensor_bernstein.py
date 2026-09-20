@@ -299,9 +299,7 @@ class _RationalTensorBernstein(eqx.Module):
             _homogeneous_component(self.h, self.parameter_dimensions, 1)
         )
 
-    def __call__(
-        self, *ts: Float[jax.Array, "..."]
-    ) -> Float[jax.Array, "..."]:
+    def __call__(self, *ts: Float[jax.Array, "..."]) -> Float[jax.Array, "..."]:
         r"""Evaluate $R(\mathbf{u})=N(\mathbf{u})/D(\mathbf{u})$.
 
         ``ts`` supplies exactly one coordinate array for each component
@@ -474,9 +472,9 @@ class _RationalTensorBernstein(eqx.Module):
         numerator = self.numerator
         denominator = self.denominator
         coefficient_count = math.prod(coefficient_shape)
-        basis_coefficients = jnp.eye(
-            coefficient_count, dtype=self.h.dtype
-        ).reshape(coefficient_shape + coefficient_shape)
+        basis_coefficients = jnp.eye(coefficient_count, dtype=self.h.dtype).reshape(
+            coefficient_shape + coefficient_shape
+        )
         basis = self.polynomial_type(basis_coefficients)
         selector_shape = coefficient_shape
         coefficient_axes = (1,) * dimensions
@@ -499,9 +497,7 @@ class _RationalTensorBernstein(eqx.Module):
             sensitivity_numerator.c, denominator_coefficients
         )
 
-    def split(
-        self, t: Float[jax.Array, "..."] | float = jnp.array(0.5), axis: int = 0
-    ):
+    def split(self, t: Float[jax.Array, "..."] | float = jnp.array(0.5), axis: int = 0):
         r"""Split along $u_a=\tau$ and reparameterize both pieces.
 
         With $a=$ ``axis`` and a new coordinate $s\in[0,1]$, the first result
@@ -676,7 +672,11 @@ class RationalBernstein2D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 2
     polynomial_type: ClassVar[type] = Bernstein2D
 
-    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
+    def __init__(
+        self,
+        values: Float[jax.Array, "*batch coefficient"],
+        weights: Float[jax.Array, "*batch coefficient"],
+    ):
         """Initialize 2D control values and strictly positive weights."""
         super().__init__(values, weights)
 
@@ -704,7 +704,11 @@ class RationalBernstein3D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 3
     polynomial_type: ClassVar[type] = Bernstein3D
 
-    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
+    def __init__(
+        self,
+        values: Float[jax.Array, "*batch coefficient"],
+        weights: Float[jax.Array, "*batch coefficient"],
+    ):
         """Initialize 3D control values and strictly positive weights."""
         super().__init__(values, weights)
 
@@ -731,7 +735,11 @@ class RationalBernstein4D(_RationalTensorBernstein):
     parameter_dimensions: ClassVar[int] = 4
     polynomial_type: ClassVar[type] = Bernstein4D
 
-    def __init__(self, values: Float[jax.Array, "*batch coefficient"], weights: Float[jax.Array, "*batch coefficient"]):
+    def __init__(
+        self,
+        values: Float[jax.Array, "*batch coefficient"],
+        weights: Float[jax.Array, "*batch coefficient"],
+    ):
         """Initialize 4D control values and strictly positive weights."""
         super().__init__(values, weights)
 
@@ -829,7 +837,10 @@ def _minimize(
 def _minimize_jvp(
     primals: tuple[Float[jax.Array, "..."], int, float],
     tangents: tuple[Float[jax.Array, "..."], int, float],
-) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]], tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]]:
+) -> tuple[
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+]:
     h, max_steps, eps = primals
     tangent_h, _, _ = tangents
     primal = _minimize(h, max_steps=max_steps, eps=eps)

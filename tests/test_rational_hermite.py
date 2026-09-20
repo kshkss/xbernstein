@@ -124,12 +124,8 @@ class RationalHermiteInterpolationTest(unittest.TestCase):
             tuple(_axis_subsets(dimensions)),
             ((0,), (1,), (2,), (0, 1), (0, 2), (1, 2), (0, 1, 2)),
         )
-        rows_x, columns_x = _subset_indices(
-            dimensions, (0,), derivative_jet_indices
-        )
-        rows_y, columns_y = _subset_indices(
-            dimensions, (1,), derivative_jet_indices
-        )
+        rows_x, columns_x = _subset_indices(dimensions, (0,), derivative_jet_indices)
+        rows_y, columns_y = _subset_indices(dimensions, (1,), derivative_jet_indices)
         rows_xy, columns_xy = _subset_indices(
             dimensions, (0, 1), derivative_jet_indices
         )

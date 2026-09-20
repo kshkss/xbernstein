@@ -49,7 +49,9 @@ from .bernstein_3d import Bernstein3D
 from .bernstein_4d import Bernstein4D
 
 
-def _multi_indices(dimensions: int, limit: int, total: int) -> tuple[tuple[int, ...], ...]:
+def _multi_indices(
+    dimensions: int, limit: int, total: int
+) -> tuple[tuple[int, ...], ...]:
     return sorted(
         (
             alpha

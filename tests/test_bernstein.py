@@ -314,9 +314,9 @@ class BernsteinFormulaTest(unittest.TestCase):
 
         expected = jax.hessian(value)(coefficients) @ direction
 
-        actual = jax.grad(
-            lambda c: jnp.vdot(jax.grad(value)(c), direction)
-        )(coefficients)
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
+            coefficients
+        )
 
         npt.assert_allclose(actual, expected, atol=1e-5)
 
@@ -332,9 +332,9 @@ class BernsteinFormulaTest(unittest.TestCase):
 
         expected = jax.hessian(value)(coefficients) @ direction
 
-        actual = jax.grad(
-            lambda c: jnp.vdot(jax.grad(value)(c), direction)
-        )(coefficients)
+        actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
+            coefficients
+        )
 
         self.assertTrue(bool(jnp.all(jnp.isfinite(actual))))
         npt.assert_allclose(actual, expected, atol=1e-5)

@@ -27,12 +27,8 @@ def _evaluate_rational_simplex(
     point: Float[jax.Array, "..."],
     dimensions: int,
 ) -> Float[jax.Array, "..."]:
-    numerator = _evaluate_simplex_coefficients(
-        homogeneous[0], point, dimensions
-    )
-    denominator = _evaluate_simplex_coefficients(
-        homogeneous[1], point, dimensions
-    )
+    numerator = _evaluate_simplex_coefficients(homogeneous[0], point, dimensions)
+    denominator = _evaluate_simplex_coefficients(homogeneous[1], point, dimensions)
     return numerator / denominator
 
 
@@ -60,15 +56,11 @@ def _rational_simplex_minimize(
     )
     samples = jnp.concatenate((identity, edge_midpoints, centroid))
     sample_values = jax.vmap(
-        lambda point: _evaluate_rational_simplex(
-            homogeneous, point, dimensions
-        )
+        lambda point: _evaluate_rational_simplex(homogeneous, point, dimensions)
     )(samples)
     best_index = jnp.argmin(sample_values)
     controls = (
-        jnp.zeros(
-            (capacity,) + homogeneous.shape, dtype=homogeneous.dtype
-        )
+        jnp.zeros((capacity,) + homogeneous.shape, dtype=homogeneous.dtype)
         .at[0]
         .set(homogeneous)
     )
@@ -82,13 +74,9 @@ def _rational_simplex_minimize(
     )
     values = homogeneous[0] / homogeneous[1]
     bounds = (
-        jnp.full(capacity, jnp.inf, dtype=homogeneous.dtype)
-        .at[0]
-        .set(jnp.min(values))
+        jnp.full(capacity, jnp.inf, dtype=homogeneous.dtype).at[0].set(jnp.min(values))
     )
-    edges_np, vertex_maps_np, matrices_np = _edge_subdivision_data(
-        dimensions, degree
-    )
+    edges_np, vertex_maps_np, matrices_np = _edge_subdivision_data(dimensions, degree)
     edges = jnp.asarray(edges_np)
     vertex_maps = jnp.asarray(vertex_maps_np, dtype=homogeneous.dtype)
     matrices = jnp.asarray(matrices_np, dtype=homogeneous.dtype)
@@ -122,9 +110,7 @@ def _rational_simplex_minimize(
         value = jnp.where(replace, candidate_value, value)
         point = jnp.where(replace, candidate_point, point)
 
-        edge_vectors = (
-            current_vertices[edges[:, 0]] - current_vertices[edges[:, 1]]
-        )
+        edge_vectors = current_vertices[edges[:, 0]] - current_vertices[edges[:, 1]]
         edge = jnp.argmax(jnp.sum(edge_vectors * edge_vectors, axis=-1))
         selected_vertex_maps = vertex_maps[edge]
         selected_matrices = matrices[edge]
@@ -155,15 +141,16 @@ def _make_rational_minimizer(dimensions: int):
         max_steps: int = 200,
         eps: float = 1e-6,
     ) -> tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]:
-        return _rational_simplex_minimize(
-            homogeneous, dimensions, max_steps, eps
-        )
+        return _rational_simplex_minimize(homogeneous, dimensions, max_steps, eps)
 
     @minimize.defjvp
     def minimize_jvp(
         primals: tuple[Float[jax.Array, "..."], int, float],
         tangents: tuple[Float[jax.Array, "..."], int, float],
-    ) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]], tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]]]:
+    ) -> tuple[
+        tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]],
+        tuple[Float[jax.Array, ""], Float[jax.Array, "barycentric"]],
+    ]:
         homogeneous, max_steps, eps = primals
         tangent_homogeneous, _, _ = tangents
         value, point = _rational_simplex_minimize(
@@ -193,9 +180,7 @@ def _make_rational_minimizer(dimensions: int):
                 )
             )(safe_y)
 
-        tangent_gradient = jax.jvp(
-            gradient, (homogeneous,), (tangent_homogeneous,)
-        )[1]
+        tangent_gradient = jax.jvp(gradient, (homogeneous,), (tangent_homogeneous,))[1]
         hessian = jax.hessian(
             lambda coordinates: _evaluate_rational_simplex(
                 homogeneous, chart(coordinates), dimensions
@@ -265,9 +250,7 @@ class _RationalSimplexBernstein(eqx.Module):
         values = jnp.asarray(values)
         weights = jnp.asarray(weights)
         if values.ndim < 1 or weights.ndim < 1:
-            raise ValueError(
-                "values and weights must have a packed coefficient axis"
-            )
+            raise ValueError("values and weights must have a packed coefficient axis")
         if values.shape[-1] != weights.shape[-1]:
             raise ValueError(
                 "values and weights must have the same packed coefficient count"
@@ -276,13 +259,9 @@ class _RationalSimplexBernstein(eqx.Module):
         dtype = jnp.result_type(values, weights, jnp.float32)
         values = values.astype(dtype)
         weights = weights.astype(dtype)
-        batch_shape = jnp.broadcast_shapes(
-            values.shape[:-1], weights.shape[:-1]
-        )
+        batch_shape = jnp.broadcast_shapes(values.shape[:-1], weights.shape[:-1])
         values = jnp.broadcast_to(values, batch_shape + (values.shape[-1],))
-        weights = jnp.broadcast_to(
-            weights, batch_shape + (weights.shape[-1],)
-        )
+        weights = jnp.broadcast_to(weights, batch_shape + (weights.shape[-1],))
         weights = eqx.error_if(
             weights,
             jnp.any(weights <= 0.0),
@@ -297,9 +276,7 @@ class _RationalSimplexBernstein(eqx.Module):
         denominator: Float[jax.Array, "*batch coefficient"],
     ):
         result = object.__new__(cls)
-        object.__setattr__(
-            result, "h", jnp.stack((numerator, denominator), axis=-2)
-        )
+        object.__setattr__(result, "h", jnp.stack((numerator, denominator), axis=-2))
         return result
 
     @property
@@ -375,8 +352,7 @@ class _RationalSimplexBernstein(eqx.Module):
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
-            self.numerator * other.denominator
-            + other.numerator * self.denominator
+            self.numerator * other.denominator + other.numerator * self.denominator
         )
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
@@ -385,8 +361,7 @@ class _RationalSimplexBernstein(eqx.Module):
         other = self._check_other(other)
         denominator = self.denominator * other.denominator
         numerator = (
-            self.numerator * other.denominator
-            - other.numerator * self.denominator
+            self.numerator * other.denominator - other.numerator * self.denominator
         )
         return type(self)._from_homogeneous(numerator.c, denominator.c)
 
@@ -408,9 +383,10 @@ class _RationalSimplexBernstein(eqx.Module):
             raise ValueError("derivative order must be non-negative")
         result = self
         for _ in range(m):
-            numerator = (
-                result.numerator.deriv(axis=axis) * result.denominator
-                - result.numerator * result.denominator.deriv(axis=axis)
+            numerator = result.numerator.deriv(
+                axis=axis
+            ) * result.denominator - result.numerator * result.denominator.deriv(
+                axis=axis
             )
             denominator = result.denominator * result.denominator
             numerator_coefficients = _elevate_coefficients(
@@ -418,9 +394,7 @@ class _RationalSimplexBernstein(eqx.Module):
                 self.simplex_dimensions,
                 denominator.order,
             )
-            result = type(self)._from_homogeneous(
-                numerator_coefficients, denominator.c
-            )
+            result = type(self)._from_homogeneous(numerator_coefficients, denominator.c)
         return result
 
     def weight_sensitivity(self) -> "RationalSimplexBernstein":

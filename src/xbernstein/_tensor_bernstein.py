@@ -75,7 +75,9 @@ def _split_tensor_coefficients(
     dimensions = coefficients.ndim
 
     def branch(selected_axis: int):
-        def split(c: Float[jax.Array, "..."]) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
+        def split(
+            c: Float[jax.Array, "..."],
+        ) -> tuple[Float[jax.Array, "..."], Float[jax.Array, "..."]]:
             w = jnp.moveaxis(c, selected_axis, -1)
             left, right = [w[..., 0]], [w[..., -1]]
             for _ in range(w.shape[-1] - 1):
@@ -165,7 +167,9 @@ def _tensor_minimize(
         point = jnp.where(replace, candidate_points[candidate_index], point)
         next_index = step + 1
         lower = lower.at[next_index].set(lo.at[axis].set(midpoint[axis]))
-        upper = upper.at[index].set(hi.at[axis].set(midpoint[axis])).at[next_index].set(hi)
+        upper = (
+            upper.at[index].set(hi.at[axis].set(midpoint[axis])).at[next_index].set(hi)
+        )
         control = control.at[index].set(left).at[next_index].set(right)
         bounds = bounds.at[index].set(jnp.min(left)).at[next_index].set(jnp.min(right))
         return lower, upper, control, bounds, value, point, step + 1
@@ -400,7 +404,10 @@ class _TensorBernstein(eqx.Module):
         return c
 
     def _broadcast_coefficients(
-        self, c: Float[jax.Array, "..."], batch_shape: tuple[int, ...], degree_shape: tuple[int, ...]
+        self,
+        c: Float[jax.Array, "..."],
+        batch_shape: tuple[int, ...],
+        degree_shape: tuple[int, ...],
     ) -> Float[jax.Array, "..."]:
         """Broadcast $c_{\mathbf{i}}$ over leading axes without changing its basis axes."""
         return jnp.broadcast_to(c, batch_shape + degree_shape)

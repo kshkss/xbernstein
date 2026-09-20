@@ -20,9 +20,7 @@ def _from_homogeneous(
 
 def _split_homogeneous(
     h: Float[jax.Array, "*batch 2 order"], t: Float[jax.Array, "..."] | float
-) -> tuple[
-    Float[jax.Array, "*batch 2 order"], Float[jax.Array, "*batch 2 order"]
-]:
+) -> tuple[Float[jax.Array, "*batch 2 order"], Float[jax.Array, "*batch 2 order"]]:
     t = jnp.asarray(t, dtype=h.dtype)
     t = jnp.broadcast_to(t, h.shape[:-2])
     weight = t[..., None, None]
@@ -273,9 +271,7 @@ class RationalBernstein(eqx.Module):
         """
         return Bernstein(self.h[..., 1, :])
 
-    def __call__(
-        self, t: Float[jax.Array, "..."] | float
-    ) -> Float[jax.Array, "..."]:
+    def __call__(self, t: Float[jax.Array, "..."] | float) -> Float[jax.Array, "..."]:
         r"""Evaluate $R(t)=N(t)/D(t)$.
 
         Both $N$ and $D$ are evaluated by the Bernstein De Casteljau
@@ -442,9 +438,7 @@ class RationalBernstein(eqx.Module):
             sensitivity_denominator.c[..., None, :],
             sensitivity_numerator.c.shape,
         )
-        return _from_homogeneous(
-            sensitivity_numerator.c, denominator_coefficients
-        )
+        return _from_homogeneous(sensitivity_numerator.c, denominator_coefficients)
 
     def split(
         self, t: Float[jax.Array, "..."] | float = jnp.array(0.5)
@@ -558,7 +552,10 @@ def _minimize(
 def _minimize_jvp(
     primals: tuple[Float[jax.Array, "*batch 2 order"], int, float],
     tangents: tuple[Float[jax.Array, "*batch 2 order"], int, float],
-) -> tuple[tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]], tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]]]:
+) -> tuple[
+    tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]],
+    tuple[Float[jax.Array, "*batch"], Float[jax.Array, "*batch"]],
+]:
     h, max_steps, eps = primals
     tangent_h, _, _ = tangents
     primal = _minimize(h, max_steps=max_steps, eps=eps)
