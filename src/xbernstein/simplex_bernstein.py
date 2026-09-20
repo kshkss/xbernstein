@@ -22,9 +22,7 @@ def _multi_indices(dimensions: int, degree: int) -> tuple[tuple[int, ...], ...]:
         sorted(
             (
                 alpha
-                for alpha in itertools.product(
-                    range(degree + 1), repeat=dimensions + 1
-                )
+                for alpha in itertools.product(range(degree + 1), repeat=dimensions + 1)
                 if sum(alpha) == degree
             ),
             reverse=True,
@@ -54,9 +52,7 @@ def _multinomial(degree: int, alpha: tuple[int, ...]) -> int:
 
 
 @functools.lru_cache
-def _elevation_matrix(
-    dimensions: int, degree: int, target_degree: int
-) -> np.ndarray:
+def _elevation_matrix(dimensions: int, degree: int, target_degree: int) -> np.ndarray:
     source = _multi_indices(dimensions, degree)
     target = _multi_indices(dimensions, target_degree)
     extra_degree = target_degree - degree
@@ -139,9 +135,7 @@ def _multiply_coefficients(
     left = jnp.broadcast_to(left, batch_shape + (left.shape[-1],))
     right = jnp.broadcast_to(right, batch_shape + (right.shape[-1],))
     output_count = len(_multi_indices(dimensions, left_degree + right_degree))
-    flat_indices, scales = _product_data(
-        dimensions, left_degree, right_degree
-    )
+    flat_indices, scales = _product_data(dimensions, left_degree, right_degree)
     products = (
         left[..., :, None]
         * right[..., None, :]
@@ -150,9 +144,9 @@ def _multiply_coefficients(
         )
     )
     result = jnp.zeros(batch_shape + (output_count,), dtype=products.dtype)
-    return result.at[..., jnp.asarray(flat_indices).reshape(
-        left.shape[-1], right.shape[-1]
-    )].add(products)
+    return result.at[
+        ..., jnp.asarray(flat_indices).reshape(left.shape[-1], right.shape[-1])
+    ].add(products)
 
 
 @functools.lru_cache
@@ -210,9 +204,7 @@ def _segment_coefficients(
     end = jnp.broadcast_to(end, batch_shape + (barycentric_dimensions,))
     output = []
     for index in range(degree + 1):
-        source_indices, betas, gammas, scales = _segment_data(
-            dimensions, degree, index
-        )
+        source_indices, betas, gammas, scales = _segment_data(dimensions, degree, index)
         beta = jnp.asarray(betas)
         gamma = jnp.asarray(gammas)
         factors = (
@@ -270,12 +262,7 @@ def _edge_subdivision_data(dimensions: int, degree: int):
         maps = np.stack((left, right))
         vertex_maps.append(maps)
         matrices.append(
-            np.stack(
-                [
-                    _restriction_matrix(dimensions, degree, child)
-                    for child in maps
-                ]
-            )
+            np.stack([_restriction_matrix(dimensions, degree, child) for child in maps])
         )
     return np.asarray(edges), np.asarray(vertex_maps), np.asarray(matrices)
 
@@ -305,9 +292,7 @@ def _simplex_minimize(
     )
     samples = jnp.concatenate((identity, edge_midpoints, centroid))
     sample_values = jax.vmap(
-        lambda point: _evaluate_simplex_coefficients(
-            coefficients, point, dimensions
-        )
+        lambda point: _evaluate_simplex_coefficients(coefficients, point, dimensions)
     )(samples)
     best_index = jnp.argmin(sample_values)
     controls = (
@@ -328,9 +313,7 @@ def _simplex_minimize(
         .at[0]
         .set(jnp.min(coefficients))
     )
-    edges_np, vertex_maps_np, matrices_np = _edge_subdivision_data(
-        dimensions, degree
-    )
+    edges_np, vertex_maps_np, matrices_np = _edge_subdivision_data(dimensions, degree)
     edges = jnp.asarray(edges_np)
     vertex_maps = jnp.asarray(vertex_maps_np, dtype=coefficients.dtype)
     matrices = jnp.asarray(matrices_np, dtype=coefficients.dtype)
@@ -364,9 +347,7 @@ def _simplex_minimize(
         value = jnp.where(replace, candidate_value, value)
         point = jnp.where(replace, candidate_point, point)
 
-        edge_vectors = (
-            current_vertices[edges[:, 0]] - current_vertices[edges[:, 1]]
-        )
+        edge_vectors = current_vertices[edges[:, 0]] - current_vertices[edges[:, 1]]
         edge = jnp.argmax(jnp.sum(edge_vectors * edge_vectors, axis=-1))
         selected_vertex_maps = vertex_maps[edge]
         selected_matrices = matrices[edge]
@@ -402,9 +383,7 @@ def _make_minimizer(dimensions: int):
     def minimize_jvp(primals, tangents):
         coefficients, max_steps, eps = primals
         tangent_coefficients, _, _ = tangents
-        value, point = _simplex_minimize(
-            coefficients, dimensions, max_steps, eps
-        )
+        value, point = _simplex_minimize(coefficients, dimensions, max_steps, eps)
         tangent_value = _evaluate_simplex_coefficients(
             tangent_coefficients, point, dimensions
         )
@@ -564,9 +543,7 @@ class _SimplexBernstein(eqx.Module):
         return other
 
     def _elevate(self, target_degree: int) -> Float[jax.Array, "*batch coefficient"]:
-        return _elevate_coefficients(
-            self.c, self.simplex_dimensions, target_degree
-        )
+        return _elevate_coefficients(self.c, self.simplex_dimensions, target_degree)
 
     def __add__(self, other: Self) -> Self:
         r"""Return $p+q$ after elevating both operands to $\max(n,m)$."""
@@ -592,9 +569,7 @@ class _SimplexBernstein(eqx.Module):
         r"""Return the degree-$(n+m)$ simplex Bernstein product $pq$."""
         other = self._check_other(other)
         return type(self)(
-            _multiply_coefficients(
-                self.c, other.c, self.simplex_dimensions
-            )
+            _multiply_coefficients(self.c, other.c, self.simplex_dimensions)
         )
 
     def deriv(self, m: int = 1, axis: int = 0) -> Self:
@@ -625,9 +600,9 @@ class _SimplexBernstein(eqx.Module):
                 alpha = list(beta)
                 alpha[axis] += 1
                 source_indices.append(lookup[tuple(alpha)])
-            coefficients = current_degree * coefficients[
-                ..., jnp.asarray(source_indices)
-            ]
+            coefficients = (
+                current_degree * coefficients[..., jnp.asarray(source_indices)]
+            )
         return type(self)(coefficients)
 
     def __call__(
@@ -648,9 +623,7 @@ class _SimplexBernstein(eqx.Module):
             jnp.asarray(value, dtype=self.c.dtype) for value in coordinates
         )
         point_shape = jnp.broadcast_shapes(*(value.shape for value in parameters))
-        parameters = tuple(
-            jnp.broadcast_to(value, point_shape) for value in parameters
-        )
+        parameters = tuple(jnp.broadcast_to(value, point_shape) for value in parameters)
         point = jnp.stack(parameters, axis=-1)
         degree = self.order
         indices = jnp.asarray(self.multi_indices)
@@ -684,9 +657,7 @@ class _SimplexBernstein(eqx.Module):
         start = jnp.asarray(start, dtype=self.c.dtype)
         end = jnp.asarray(end, dtype=self.c.dtype)
         return Bernstein(
-            _segment_coefficients(
-                self.c, start, end, self.simplex_dimensions
-            )
+            _segment_coefficients(self.c, start, end, self.simplex_dimensions)
         )
 
 

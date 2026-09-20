@@ -47,7 +47,7 @@ def _derivative_row(
 
 
 def _unpack_derivatives(
-    dimensions: int, values: tuple[Float[jax.Array, "..."] , ...]
+    dimensions: int, values: tuple[Float[jax.Array, "..."], ...]
 ) -> dict[tuple[int, ...], Float[jax.Array, "..."]]:
     derivatives = {}
     for total, group in enumerate(values):
@@ -168,9 +168,7 @@ def _solve_subset_one(
     )
     scaled_matrix = normalized_matrix / column_scale[None, :]
     singular_values = jnp.linalg.svd(scaled_matrix, compute_uv=False)
-    rank_tolerance = jnp.finfo(matrix.dtype).eps * jnp.maximum(
-        singular_values[0], 1.0
-    )
+    rank_tolerance = jnp.finfo(matrix.dtype).eps * jnp.maximum(singular_values[0], 1.0)
     rank = jnp.sum(singular_values > rank_tolerance)
 
     def solve_regular(_):
@@ -188,9 +186,8 @@ def _solve_subset_one(
     solution = scaled_solution / column_scale
     residual = normalized_matrix @ solution - normalized_rhs
     residual_tolerance = 10.0 * jnp.sqrt(jnp.finfo(matrix.dtype).eps)
-    invalid = (
-        (jnp.max(jnp.abs(residual)) > residual_tolerance)
-        | ~jnp.all(jnp.isfinite(solution))
+    invalid = (jnp.max(jnp.abs(residual)) > residual_tolerance) | ~jnp.all(
+        jnp.isfinite(solution)
     )
     return solution, invalid
 
@@ -232,7 +229,12 @@ def _subset_indices(
 
 def _interpolate(
     dimensions: int, groups: tuple[Float[jax.Array, "..."], ...]
-) -> Shaped[RationalBernstein, "*batch"] | Shaped[RationalBernstein2D, "*batch"] | Shaped[RationalBernstein3D, "*batch"] | Shaped[RationalBernstein4D, "*batch"]:
+) -> (
+    Shaped[RationalBernstein, "*batch"]
+    | Shaped[RationalBernstein2D, "*batch"]
+    | Shaped[RationalBernstein3D, "*batch"]
+    | Shaped[RationalBernstein4D, "*batch"]
+):
     values, batch_shape = _validate_groups(dimensions, 5, groups)
     derivatives = _unpack_derivatives(dimensions, values)
     dtype = values[0].dtype

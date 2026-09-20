@@ -28,11 +28,16 @@ class PiecewiseCurve3DTest(unittest.TestCase):
         curve = PiecewiseCurve3D(positions, tangents)
         values = curve(jnp.array([0.0, 1.0, 2.0]))
         npt.assert_allclose(values, positions)
-        npt.assert_allclose(jax.jit(lambda t: curve(t))(jnp.array([0.25, 1.5])), curve(jnp.array([0.25, 1.5])))
+        npt.assert_allclose(
+            jax.jit(lambda t: curve(t))(jnp.array([0.25, 1.5])),
+            curve(jnp.array([0.25, 1.5])),
+        )
         left = curve.interpolant(0).deriv()(1.0)
         right = curve.interpolant(1).deriv()(0.0)
         npt.assert_allclose(left, right, atol=1e-6)
-        npt.assert_allclose(curve(jnp.array([-1.0, 3.0])), jnp.stack((positions[0], positions[-1])))
+        npt.assert_allclose(
+            curve(jnp.array([-1.0, 3.0])), jnp.stack((positions[0], positions[-1]))
+        )
 
     def test_rejects_invalid_inputs(self):
         with self.assertRaisesRegex(ValueError, "shape"):

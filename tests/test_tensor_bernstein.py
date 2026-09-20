@@ -243,9 +243,7 @@ class TensorBernsteinTest(unittest.TestCase):
 
         npt.assert_allclose(result.x, jnp.array([a, b]), atol=1e-3)
         npt.assert_allclose(result.f, 0.0, atol=1e-6)
-        npt.assert_allclose(
-            polynomial(*result.x), result.f, rtol=1e-5, atol=1e-6
-        )
+        npt.assert_allclose(polynomial(*result.x), result.f, rtol=1e-5, atol=1e-6)
 
     def test_maximize_tensor_polynomials_and_jvp(self):
         for polynomial_type, dimensions in (
@@ -303,9 +301,9 @@ class TensorBernsteinTest(unittest.TestCase):
                     (direction,),
                 )[1]
 
-                actual = jax.grad(
-                    lambda c: jnp.vdot(jax.grad(value)(c), direction)
-                )(coefficients)
+                actual = jax.grad(lambda c: jnp.vdot(jax.grad(value)(c), direction))(
+                    coefficients
+                )
 
                 npt.assert_allclose(actual, expected, atol=1e-5)
 

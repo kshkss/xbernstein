@@ -18,7 +18,10 @@ def _minimize(
 def _minimize_jvp(
     primals: tuple[Float[jax.Array, "..."], int, float],
     tangents: tuple[Float[jax.Array, "..."], int, float],
-) -> tuple[tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]], tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]]]:
+) -> tuple[
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+    tuple[Float[jax.Array, ""], Float[jax.Array, "dim"]],
+]:
     coefficients, max_steps, eps = primals
     tangent_coefficients, _, _ = tangents
     return _tensor_minimize_jvp(coefficients, tangent_coefficients, max_steps, eps)

@@ -415,7 +415,9 @@ class RationalTensorBernsteinTest(unittest.TestCase):
                 )(weights)
                 coefficient_axes = tuple(range(dimensions))
                 target_axes = tuple(
-                    range(actual(*parameters).ndim - dimensions, actual(*parameters).ndim)
+                    range(
+                        actual(*parameters).ndim - dimensions, actual(*parameters).ndim
+                    )
                 )
 
                 self.assertIsInstance(actual, rational_type)

@@ -44,9 +44,7 @@ def _endpoint_groups(values, weights):
             vertex_jets = {}
             for vertex in vertices:
                 value = _polynomial_vertex_jet(numerator, alpha, vertex)
-                for gamma in itertools.product(
-                    *(range(order + 1) for order in alpha)
-                ):
+                for gamma in itertools.product(*(range(order + 1) for order in alpha)):
                     if gamma == alpha:
                         continue
                     coefficient = math.prod(
@@ -58,9 +56,7 @@ def _endpoint_groups(values, weights):
                     value -= (
                         coefficient
                         * jets[gamma][vertex]
-                        * _polynomial_vertex_jet(
-                            weights, denominator_alpha, vertex
-                        )
+                        * _polynomial_vertex_jet(weights, denominator_alpha, vertex)
                     )
                 vertex_jets[vertex] = value / _polynomial_vertex_jet(
                     weights, (0, 0, 0), vertex
@@ -70,15 +66,11 @@ def _endpoint_groups(values, weights):
     groups = []
     for total in range(7):
         derivatives = [
-            np.asarray([jets[alpha][vertex] for vertex in vertices]).reshape(
-                (2, 2, 2)
-            )
+            np.asarray([jets[alpha][vertex] for vertex in vertices]).reshape((2, 2, 2))
             for alpha in _multi_indices(total)
         ]
         groups.append(
-            derivatives[0]
-            if len(derivatives) == 1
-            else np.stack(derivatives, axis=-1)
+            derivatives[0] if len(derivatives) == 1 else np.stack(derivatives, axis=-1)
         )
     return groups
 
@@ -164,20 +156,18 @@ class RationalHermiteGrid3DTest(unittest.TestCase):
         physical_groups = [local_groups[0]]
         for total, group in enumerate(local_groups[1:], start=1):
             scales = np.asarray(
-                [np.prod(widths ** np.asarray(alpha)) for alpha in _multi_indices(total)]
+                [
+                    np.prod(widths ** np.asarray(alpha))
+                    for alpha in _multi_indices(total)
+                ]
             )
-            physical_groups.append(
-                group / (scales[0] if scales.size == 1 else scales)
-            )
+            physical_groups.append(group / (scales[0] if scales.size == 1 else scales))
 
         grid = RationalHermiteGrid3D(
             jnp.array([1.0, 3.0]),
             jnp.array([-2.0, 1.0]),
             jnp.array([4.0, 8.0]),
-            *(
-                jnp.asarray(np.stack((group, 2.0 * group)))
-                for group in physical_groups
-            ),
+            *(jnp.asarray(np.stack((group, 2.0 * group))) for group in physical_groups),
         )
         patch = grid.cell_interpolant(jnp.array([0, 0, 0]))
         compiled_patch = jax.jit(lambda index: grid.cell_interpolant(index))(
@@ -230,7 +220,9 @@ class RationalHermiteGrid3DTest(unittest.TestCase):
         npt.assert_array_equal(on_plane.cell_indices[:2], [[1, 0, 0], [1, 1, 0]])
         npt.assert_array_equal(on_plane.valid_mask, [True, True, False, False])
 
-        point = grid.split_segment(jnp.array([1.0, 2.0, 3.0]), jnp.array([1.0, 2.0, 3.0]))
+        point = grid.split_segment(
+            jnp.array([1.0, 2.0, 3.0]), jnp.array([1.0, 2.0, 3.0])
+        )
         npt.assert_array_equal(point.valid_mask, [True, False, False, False])
         npt.assert_array_equal(point.cell_indices[0], [1, 1, 1])
         npt.assert_allclose(point.local_endpoints[0], jnp.zeros((2, 3)))

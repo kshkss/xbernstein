@@ -23,9 +23,7 @@ def simplex_indices(dimensions, degree):
     return sorted(
         (
             alpha
-            for alpha in itertools.product(
-                range(degree + 1), repeat=dimensions + 1
-            )
+            for alpha in itertools.product(range(degree + 1), repeat=dimensions + 1)
             if sum(alpha) == degree
         ),
         reverse=True,
@@ -96,7 +94,9 @@ class SimplexBernsteinTest(unittest.TestCase):
                 for vertex in range(dimensions + 1):
                     coordinates = np.eye(dimensions + 1)[vertex]
                     expected_index = simplex_indices(dimensions, 2).index(
-                        tuple(2 if axis == vertex else 0 for axis in range(dimensions + 1))
+                        tuple(
+                            2 if axis == vertex else 0 for axis in range(dimensions + 1)
+                        )
                     )
                     npt.assert_allclose(
                         polynomial(*coordinates), coefficients[expected_index]
@@ -114,9 +114,7 @@ class SimplexBernsteinTest(unittest.TestCase):
     def test_arithmetic_matches_pointwise_operations(self):
         for polynomial_type, dimensions, count in self.cases:
             left = polynomial_type(jnp.arange(count, dtype=jnp.float32) / count)
-            right = polynomial_type(
-                jnp.arange(dimensions + 1, dtype=jnp.float32)
-            )
+            right = polynomial_type(jnp.arange(dimensions + 1, dtype=jnp.float32))
             point = jnp.arange(1, dimensions + 2, dtype=jnp.float32)
             point /= jnp.sum(point)
 
@@ -171,19 +169,14 @@ class SimplexBernsteinTest(unittest.TestCase):
             end = jnp.full(dimensions + 1, 1.0 / (dimensions + 1))
             segment = polynomial.segment(start, end)
             parameters = jnp.linspace(0.0, 1.0, 7)
-            points = (
-                (1.0 - parameters[:, None]) * start
-                + parameters[:, None] * end
-            )
+            points = (1.0 - parameters[:, None]) * start + parameters[:, None] * end
 
             with self.subTest(polynomial_type=polynomial_type.__name__):
                 self.assertIsInstance(segment, Bernstein)
                 self.assertEqual(segment.order, polynomial.order)
                 npt.assert_allclose(
                     segment(parameters),
-                    polynomial(
-                        *(points[:, axis] for axis in range(dimensions + 1))
-                    ),
+                    polynomial(*(points[:, axis] for axis in range(dimensions + 1))),
                     rtol=2e-5,
                 )
 
@@ -213,9 +206,7 @@ class SimplexBernsteinTest(unittest.TestCase):
 
     def test_minimize_maximize_and_jvp(self):
         for polynomial_type, dimensions, _ in self.cases:
-            linear = polynomial_type(
-                jnp.arange(dimensions + 1, dtype=jnp.float32)
-            )
+            linear = polynomial_type(jnp.arange(dimensions + 1, dtype=jnp.float32))
             minimum = minimize(linear, max_steps=10)
             maximum = maximize(linear, max_steps=10)
 
@@ -230,9 +221,9 @@ class SimplexBernsteinTest(unittest.TestCase):
         y = Bernstein2DS(jnp.array([0.0, 1.0, 0.0]))
         constant_x = Bernstein2DS(jnp.array([0.2]))
         constant_y = Bernstein2DS(jnp.array([0.3]))
-        quadratic = (x - constant_x) * (x - constant_x) + (
+        quadratic = (x - constant_x) * (x - constant_x) + (y - constant_y) * (
             y - constant_y
-        ) * (y - constant_y)
+        )
         result = minimize(quadratic, max_steps=200, eps=1e-6)
         npt.assert_allclose(result.f, 0.0, atol=1e-6)
         npt.assert_allclose(result.x, [0.2, 0.3, 0.5], atol=5e-4)
@@ -245,9 +236,7 @@ class SimplexBernsteinTest(unittest.TestCase):
         npt.assert_allclose(tangent.f, 1.0, atol=1e-5)
         npt.assert_allclose(tangent.x, 0.0, atol=1e-5)
 
-        batched = Bernstein2DS(
-            jnp.stack((quadratic.c, quadratic.c + 1.0))
-        )
+        batched = Bernstein2DS(jnp.stack((quadratic.c, quadratic.c + 1.0)))
         batched_result = minimize(batched, max_steps=200, eps=1e-6)
         self.assertEqual(batched_result.f.shape, (2,))
         self.assertEqual(batched_result.x.shape, (2, 3))
@@ -258,9 +247,9 @@ class SimplexBernsteinTest(unittest.TestCase):
         y = Bernstein2DS(jnp.array([0.0, 1.0, 0.0]))
         constant_x = Bernstein2DS(jnp.array([0.2]))
         constant_y = Bernstein2DS(jnp.array([0.3]))
-        quadratic = (x - constant_x) * (x - constant_x) + (
+        quadratic = (x - constant_x) * (x - constant_x) + (y - constant_y) * (
             y - constant_y
-        ) * (y - constant_y)
+        )
         direction = jnp.ones_like(quadratic.c) * 0.1
         weights = jnp.array([0.2, 0.3, 0.5])
 

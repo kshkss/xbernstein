@@ -93,9 +93,7 @@ class PiecewiseCurve3D(eqx.Module):
         )
         parameter = jnp.clip(parameter, 0.0, float(self.segment_count))
         flat = parameter.reshape(-1)
-        indices = jnp.minimum(
-            jnp.floor(flat).astype(jnp.int32), self.segment_count - 1
-        )
+        indices = jnp.minimum(jnp.floor(flat).astype(jnp.int32), self.segment_count - 1)
         local = flat - indices
 
         def evaluate(index, value):

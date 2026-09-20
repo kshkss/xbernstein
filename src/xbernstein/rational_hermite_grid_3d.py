@@ -59,7 +59,9 @@ class RationalHermiteGrid3D(eqx.Module):
         coordinates = tuple(jnp.asarray(axis) for axis in (x, y, z))
         for name, axis in zip(("x", "y", "z"), coordinates):
             if axis.ndim != 1 or axis.shape[0] < 2:
-                raise ValueError(f"{name} must be a one-dimensional array of length >= 2")
+                raise ValueError(
+                    f"{name} must be a one-dimensional array of length >= 2"
+                )
             axis = eqx.error_if(
                 axis,
                 jnp.any(~jnp.isfinite(axis)) | jnp.any(jnp.diff(axis) <= 0.0),
@@ -149,9 +151,7 @@ class RationalHermiteGrid3D(eqx.Module):
         """Return the tricubic rational Bernstein interpolant for one cell."""
         cell_index = jnp.asarray(cell_index)
         if cell_index.shape != (3,):
-            raise ValueError(
-                f"cell_index must have shape (3,), got {cell_index.shape}"
-            )
+            raise ValueError(f"cell_index must have shape (3,), got {cell_index.shape}")
         maximum = jnp.asarray(self.grid_shape, dtype=jnp.int32) - 2
         cell_index = cell_index.astype(jnp.int32)
         cell_index = eqx.error_if(
@@ -238,7 +238,9 @@ class RationalHermiteGrid3D(eqx.Module):
             physical = start + parameter_pair[:, None] * delta
             midpoint = jnp.mean(physical, axis=0)
             cell = self.cell_index(midpoint)
-            local = jax.vmap(lambda point: self._local_coordinates(point, cell))(physical)
+            local = jax.vmap(lambda point: self._local_coordinates(point, cell))(
+                physical
+            )
 
             def write(current):
                 index, current_cells, current_endpoints, current_mask = current
@@ -258,13 +260,20 @@ class RationalHermiteGrid3D(eqx.Module):
             0,
             interval_starts.shape[0],
             add_interval,
-            (jnp.asarray(0, dtype=jnp.int32), cell_indices, local_endpoints, valid_mask),
+            (
+                jnp.asarray(0, dtype=jnp.int32),
+                cell_indices,
+                local_endpoints,
+                valid_mask,
+            ),
         )
 
         no_piece = ~jnp.any(valid_mask)
         cell = self.cell_index(start)
         local = self._local_coordinates(start, cell)
-        cell_indices = cell_indices.at[0].set(jnp.where(no_piece, cell, cell_indices[0]))
+        cell_indices = cell_indices.at[0].set(
+            jnp.where(no_piece, cell, cell_indices[0])
+        )
         local_endpoints = local_endpoints.at[0].set(
             jnp.where(no_piece, jnp.stack((local, local)), local_endpoints[0])
         )

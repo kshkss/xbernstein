@@ -27,9 +27,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
 
     def test_constructor_properties_and_broadcasting(self):
         for rational_type, dimensions, count, polynomial_type in self.cases:
-            values = jnp.arange(count, dtype=jnp.float32).reshape(
-                (1, count)
-            )
+            values = jnp.arange(count, dtype=jnp.float32).reshape((1, count))
             weights = jnp.arange(1, 2 * count + 1, dtype=jnp.float32).reshape(
                 (2, count)
             )
@@ -45,9 +43,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
                 npt.assert_allclose(
                     function.h[..., 0, :], function.values * function.weights
                 )
-                self.assertEqual(
-                    function.numerator.c.shape, function.values.shape
-                )
+                self.assertEqual(function.numerator.c.shape, function.values.shape)
                 if polynomial_type is not None:
                     self.assertIsInstance(function.numerator, polynomial_type)
 
@@ -59,9 +55,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "packed coefficient count"):
             RationalBernstein2DS(jnp.ones(2), jnp.ones(2))
         with self.assertRaisesRegex(eqx.EquinoxRuntimeError, "strictly positive"):
-            RationalBernstein2DS(
-                jnp.ones(3), jnp.array([1.0, 0.0, 1.0])
-            )
+            RationalBernstein2DS(jnp.ones(3), jnp.array([1.0, 0.0, 1.0]))
 
     def test_evaluation_matches_homogeneous_ratio_and_weight_scaling(self):
         for rational_type, dimensions, count, _ in self.cases:
@@ -72,9 +66,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
             point /= jnp.sum(point)
 
             with self.subTest(rational_type=rational_type.__name__):
-                expected = function.numerator(*point) / function.denominator(
-                    *point
-                )
+                expected = function.numerator(*point) / function.denominator(*point)
                 npt.assert_allclose(function(*point), expected)
                 npt.assert_allclose(
                     rational_type(values, 7.0 * weights)(*point),
@@ -119,8 +111,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
                 values = jnp.arange(count, dtype=jnp.float32) / count
                 weights = jnp.linspace(0.5, 2.0, count)
                 coordinates = tuple(
-                    jnp.full(4, 1.0 / (dimensions + 1))
-                    for _ in range(dimensions + 1)
+                    jnp.full(4, 1.0 / (dimensions + 1)) for _ in range(dimensions + 1)
                 )
                 function = rational_type(values, weights)
                 actual = function.weight_sensitivity()
@@ -154,18 +145,13 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
             end = jnp.full(dimensions + 1, 1.0 / (dimensions + 1))
             segment = function.segment(start, end)
             parameters = jnp.linspace(0.0, 1.0, 7)
-            points = (
-                (1.0 - parameters[:, None]) * start
-                + parameters[:, None] * end
-            )
+            points = (1.0 - parameters[:, None]) * start + parameters[:, None] * end
 
             with self.subTest(rational_type=rational_type.__name__):
                 self.assertIsInstance(segment, RationalBernstein)
                 npt.assert_allclose(
                     segment(parameters),
-                    function(
-                        *(points[:, axis] for axis in range(dimensions + 1))
-                    ),
+                    function(*(points[:, axis] for axis in range(dimensions + 1))),
                     rtol=3e-5,
                 )
 
@@ -212,9 +198,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
         npt.assert_allclose(tangent.f, 1.0)
         npt.assert_allclose(tangent.x, 0.0)
 
-        batched = RationalBernstein2DS(
-            jnp.stack((values, values + 1.0)), weights
-        )
+        batched = RationalBernstein2DS(jnp.stack((values, values + 1.0)), weights)
         batched_result = minimize(batched, max_steps=20)
         self.assertEqual(batched_result.f.shape, (2,))
         self.assertEqual(batched_result.x.shape, (2, 3))
@@ -228,9 +212,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
 
         def value(controls):
             return jnp.vdot(
-                minimize(
-                    RationalBernstein2DS(controls, weights), max_steps=20
-                ).x,
+                minimize(RationalBernstein2DS(controls, weights), max_steps=20).x,
                 result_weights,
             )
 
@@ -255,9 +237,7 @@ class RationalSimplexBernsteinTest(unittest.TestCase):
 
         def value(controls):
             return jnp.vdot(
-                minimize(
-                    RationalBernstein2DS(controls, weights), max_steps=20
-                ).x,
+                minimize(RationalBernstein2DS(controls, weights), max_steps=20).x,
                 result_weights,
             )
 
