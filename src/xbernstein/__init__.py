@@ -45,6 +45,7 @@ from .hermite_grid import (
 )
 from .piecewise_rational_curve_3d import PiecewiseRationalCurve3D
 from .piecewise_curve_3d import PiecewiseCurve3D
+from .piecewise_quintic_curve_3d import PiecewiseQuinticCurve3D
 from .c1_grid import (
     P3C1Grid1D,
     P3C1Grid2D,
@@ -59,6 +60,7 @@ from .c1_grid import (
     P5C1Grid3D,
     P5C1Grid4D,
 )
+from .fem1d import P1C0, P2C0, P3C0, P3C1, P4C1, P5C1, P5C2
 from .hermite import (
     hermite_interpolate_1d,
     hermite_interpolate_2d,
@@ -102,6 +104,7 @@ __all__ = [
     "RationalHermiteGrid3D",
     "PiecewiseRationalCurve3D",
     "PiecewiseCurve3D",
+    "PiecewiseQuinticCurve3D",
     "P3C1Grid1D",
     "P3C1Grid2D",
     "P3C1Grid3D",
@@ -114,6 +117,13 @@ __all__ = [
     "P5C1Grid2D",
     "P5C1Grid3D",
     "P5C1Grid4D",
+    "P1C0",
+    "P2C0",
+    "P3C0",
+    "P3C1",
+    "P4C1",
+    "P5C1",
+    "P5C2",
     "rational_hermite_interpolate_1d",
     "rational_hermite_interpolate_2d",
     "rational_hermite_interpolate_3d",
