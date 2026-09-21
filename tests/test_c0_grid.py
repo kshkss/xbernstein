@@ -297,6 +297,63 @@ class C0GridSegmentGridTest(unittest.TestCase):
         npt.assert_allclose(result.f[0], expected0.f, atol=1e-5)
         npt.assert_allclose(result.f[1], expected1.f, atol=1e-5)
 
+    def test_supports_a_single_cell_batched_grid(self):
+        # segment_capacity == 1 here, so the welding scan runs over a
+        # zero-length remainder (pieces[1:]/mask[1:] are empty) -- a
+        # degenerate case the general batch test above doesn't exercise.
+        x = jnp.array([0.0, 1.0])
+        y = jnp.array([0.0, 1.0])
+        f0 = jnp.array([[0.0, 1.0], [2.0, 3.0]])
+        f1 = jnp.array([[1.0, 0.0], [3.0, 2.0]])
+        grid = P1C0Grid2D(x, y, jnp.stack([f0, f1]))
+        self.assertEqual(grid.segment_capacity, 1)
+        start = jnp.array([0.1, 0.1])
+        end = jnp.array([0.9, 0.9])
+
+        result = grid.segment_grid(start, end)
+
+        expected0 = P1C0Grid2D(x, y, f0).segment_grid(start, end)
+        expected1 = P1C0Grid2D(x, y, f1).segment_grid(start, end)
+        npt.assert_allclose(result.f[0], expected0.f, atol=1e-5)
+        npt.assert_allclose(result.f[1], expected1.f, atol=1e-5)
+
+    def test_supports_a_batched_grid_with_no_crossings(self):
+        # The segment stays inside a single cell of a multi-cell grid, so
+        # _split_segment's no_piece fallback path is exercised together
+        # with batching.
+        x = jnp.array([0.0, 1.0, 2.0])
+        y = jnp.array([0.0, 1.0, 2.0])
+        f0 = jnp.arange(9.0).reshape(3, 3)
+        f1 = jnp.arange(9.0).reshape(3, 3) * 2.0
+        grid = P1C0Grid2D(x, y, jnp.stack([f0, f1]))
+        start = jnp.array([0.1, 0.1])
+        end = jnp.array([0.15, 0.12])
+
+        result = grid.segment_grid(start, end)
+
+        expected0 = P1C0Grid2D(x, y, f0).segment_grid(start, end)
+        expected1 = P1C0Grid2D(x, y, f1).segment_grid(start, end)
+        npt.assert_allclose(result.f[0], expected0.f, atol=1e-5)
+        npt.assert_allclose(result.f[1], expected1.f, atol=1e-5)
+
+    def test_supports_a_multi_axis_batch_shape(self):
+        # A rank-2 batch shape, not just a single leading batch axis, to
+        # confirm the welding reshape generalizes beyond one batch axis.
+        x = jnp.array([0.0, 1.0, 2.0])
+        y = jnp.array([0.0, 1.0, 3.0])
+        f = jnp.arange(2 * 3 * 3 * 3, dtype=jnp.float32).reshape(2, 3, 3, 3)
+        grid = P1C0Grid2D(x, y, f)
+        start = jnp.array([0.25, 0.5])
+        end = jnp.array([1.75, 2.5])
+
+        result = grid.segment_grid(start, end)
+        self.assertEqual(result.shape, (2, 3))
+
+        for i in range(2):
+            for j in range(3):
+                expected = P1C0Grid2D(x, y, f[i, j]).segment_grid(start, end)
+                npt.assert_allclose(result.f[i, j], expected.f, atol=1e-5)
+
     def test_preserves_narrow_intervals_near_a_grid_line(self):
         # Regression test: a fixed absolute tolerance on interval width
         # would drop this first, genuinely narrow-but-real interval
