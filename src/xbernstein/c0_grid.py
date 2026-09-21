@@ -25,6 +25,7 @@ elsewhere in this library.
 """
 
 import itertools
+from typing import NamedTuple
 
 import equinox as eqx
 import jax
@@ -35,6 +36,22 @@ from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
 from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
 from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 from .hermite_grid import GridSegment
+
+
+class GridOptimizeResult(NamedTuple):
+    r"""Result of :meth:`_C0Grid.minimize`/:meth:`_C0Grid.maximize`.
+
+    Unlike :class:`~xbernstein.OptimizeResult`, this also reports which cell
+    the extremum was found in, since a grid's global extremum is the best of
+    many independent per-cell searches. ``f`` and ``cell`` share the leading
+    batch shape; ``x`` and ``cell`` share the same trailing ``(dimension,)``
+    shape, and ``cell`` is the index :meth:`_C0Grid.cell_interpolant` expects
+    for the cell containing ``x``.
+    """
+
+    f: jax.Array
+    x: jax.Array
+    cell: jax.Array
 
 
 class _C0Grid(eqx.Module):
@@ -222,6 +239,7 @@ class _C0Grid(eqx.Module):
 
         best_value = None
         best_point = None
+        best_cell = None
         for cell in itertools.product(*(range(count) for count in cell_counts)):
             cell_index = jnp.asarray(cell, dtype=jnp.int32)
             coefficients = sign * self._cell_coefficients(cell_index)
@@ -245,28 +263,34 @@ class _C0Grid(eqx.Module):
             starts = jnp.stack([axis[index] for axis, index in zip(self.axes, cell)])
             ends = jnp.stack([axis[index + 1] for axis, index in zip(self.axes, cell)])
             point = starts + x * (ends - starts)
+            cell_broadcast = jnp.broadcast_to(
+                cell_index, batch_shape + (self.dimension,)
+            )
 
             if best_value is None:
-                best_value, best_point = value, point
+                best_value, best_point, best_cell = value, point, cell_broadcast
             else:
                 better = value < best_value
                 best_value = jnp.where(better, value, best_value)
                 best_point = jnp.where(better[..., None], point, best_point)
+                best_cell = jnp.where(better[..., None], cell_broadcast, best_cell)
 
-        from . import OptimizeResult
-
-        return OptimizeResult(f=sign * best_value, x=best_point)
+        return GridOptimizeResult(f=sign * best_value, x=best_point, cell=best_cell)
 
     def minimize(self, max_steps: int = 200, eps: float = 1e-6):
         r"""Approximate $\min_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
 
         Applies :func:`xbernstein.minimize`'s per-cell branch and bound to
-        every cell of the grid and returns the best result as an
-        :class:`~xbernstein.OptimizeResult`, whose ``x`` is a *physical*
-        point — unlike the module-level function's ``[0,1]``-parameter
-        location. ``x`` always has trailing shape ``(dimension,)``,
-        including for one-dimensional grids, matching every other physical
-        point in this class's API (``__call__``, ``cell_index``, ...).
+        every cell of the grid and returns the best result as a
+        :class:`GridOptimizeResult`, whose ``x`` is a *physical* point —
+        unlike the module-level function's ``[0,1]``-parameter location.
+        ``x`` always has trailing shape ``(dimension,)``, including for
+        one-dimensional grids, matching every other physical point in this
+        class's API (``__call__``, ``cell_index``, ...). ``cell`` is the
+        index of the cell the extremum was found in — pass it directly to
+        :meth:`cell_interpolant` — and, when several cells tie exactly
+        (e.g. a degree-1 grid's extremum sitting on a shared vertex), it is
+        whichever tied cell the per-cell search happens to visit first.
 
         Available in every dimension, unlike :meth:`split_segment`,
         :meth:`segment_grid`, and :meth:`integrate_out`.
@@ -277,7 +301,8 @@ class _C0Grid(eqx.Module):
         r"""Approximate $\max_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
 
         Implemented, like :func:`xbernstein.maximize`, as the negated
-        :meth:`minimize`. See :meth:`minimize` for the meaning of ``x``.
+        :meth:`minimize`. See :meth:`minimize` for the meaning of ``x`` and
+        ``cell``.
         """
         return self._extreme(-1.0, max_steps, eps)
 

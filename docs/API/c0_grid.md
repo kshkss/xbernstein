@@ -86,8 +86,13 @@ domain. Each cell's `cell_interpolant` is minimized independently with the
 same branch-and-bound solver as `xbernstein.minimize` — the convex-hull
 certification is only ever local to one cell — and the
 best result across all cells is kept, so cost scales with the total number
-of cells. Unlike the module-level function, the returned `x` is a *physical*
-point with trailing shape `(dimension,)` in every dimension, matching this
-class's other physical-point arguments and results. As with the underlying
-per-cell solvers, `max_steps`/`eps` must stay concrete Python values, so
-`minimize`/`maximize` cannot be nested inside an outer `jax.jit`.
+of cells. They return a `GridOptimizeResult(f, x, cell)`: unlike
+`xbernstein.OptimizeResult`, the returned `x` is a *physical* point with
+trailing shape `(dimension,)` in every dimension, matching this class's
+other physical-point arguments and results, and `cell` is the winning
+cell's index — pass it straight to `cell_interpolant`. When several cells
+tie exactly (for example a degree-1 grid whose extremum sits on a shared
+vertex), `cell` is whichever tied cell the per-cell search visits first, not
+a canonical choice. As with the underlying per-cell solvers, `max_steps`/
+`eps` must stay concrete Python values, so `minimize`/`maximize` cannot be
+nested inside an outer `jax.jit`.
