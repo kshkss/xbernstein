@@ -63,6 +63,9 @@ class _C0Grid(eqx.Module):
     degree: int = eqx.field(static=True)
 
     def _initialize(self, axes, f, dimension, degree):
+        if degree < 1:
+            raise ValueError(f"degree must be >= 1, got {degree}")
+
         coordinates = [jnp.asarray(axis) for axis in axes]
         names = "xyzw"[:dimension]
         for axis_index, (name, axis) in enumerate(zip(names, coordinates)):
