@@ -122,6 +122,37 @@ class C0GridValidationAndSmokeTest(unittest.TestCase):
         with self.assertRaises(TypeCheckError):
             C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(1), degree=2.0)
 
+    def test_call_and_cell_index_reject_a_non_array_point(self):
+        from jaxtyping import TypeCheckError
+
+        grid = P1C0Grid1D(jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]))
+        with self.assertRaises(TypeCheckError):
+            grid([0.5])
+        with self.assertRaises(TypeCheckError):
+            grid.cell_index([0.5])
+
+    def test_split_segment_and_segment_grid_reject_mismatched_start_end(self):
+        from jaxtyping import TypeCheckError
+
+        grid = P1C0Grid2D(
+            jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]), jnp.zeros((3, 3))
+        )
+        with self.assertRaises(TypeCheckError):
+            grid.split_segment(jnp.array([0.0, 0.0]), jnp.array([1.0, 1.0, 1.0]))
+        with self.assertRaises(TypeCheckError):
+            grid.segment_grid(jnp.array([0.0, 0.0]), jnp.array([1.0, 1.0, 1.0]))
+
+    def test_minimize_and_integrate_out_reject_non_integer_scalars(self):
+        from jaxtyping import TypeCheckError
+
+        grid = P1C0Grid2D(
+            jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]), jnp.zeros((3, 3))
+        )
+        with self.assertRaises(TypeCheckError):
+            grid.minimize(max_steps=1.5)
+        with self.assertRaises(TypeCheckError):
+            grid.integrate_out(axis=0.5)
+
     def test_split_segment_is_available_only_from_2d(self):
         grid = P1C0Grid2D(
             jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]), jnp.zeros((3, 3))

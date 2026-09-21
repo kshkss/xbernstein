@@ -164,7 +164,8 @@ class _C0Grid(eqx.Module):
         upper = jnp.stack([axis[-1] for axis in self.axes])
         return jnp.clip(point, lower, upper)
 
-    def cell_index(self, point):
+    @jaxtyped(typechecker=beartype)
+    def cell_index(self, point: Shaped[jax.Array, " d"]):
         point = self._point(point)
         indices = [
             jnp.clip(jnp.searchsorted(axis, value, side="right") - 1, 0, axis.size - 2)
@@ -199,7 +200,8 @@ class _C0Grid(eqx.Module):
             )
         return result
 
-    def cell_interpolant(self, cell_index):
+    @jaxtyped(typechecker=beartype)
+    def cell_interpolant(self, cell_index: Shaped[jax.Array, " d"]):
         """Return the :class:`Bernstein`-family polynomial local to one cell."""
         cell_index = jnp.asarray(cell_index)
         if cell_index.shape != (self.dimension,):
@@ -216,7 +218,8 @@ class _C0Grid(eqx.Module):
         polynomial_types = (Bernstein, Bernstein2D, Bernstein3D, Bernstein4D)
         return polynomial_types[self.dimension - 1](self._cell_coefficients(cell_index))
 
-    def __call__(self, point):
+    @jaxtyped(typechecker=beartype)
+    def __call__(self, point: Shaped[jax.Array, " d"]):
         """Evaluate the piecewise interpolant at ``point``."""
         point = self._point(point)
         cell = self.cell_index(point)
@@ -290,7 +293,8 @@ class _C0Grid(eqx.Module):
 
         return GridOptimizeResult(f=sign * best_value, x=best_point, cell=best_cell)
 
-    def minimize(self, max_steps: int = 200, eps: float = 1e-6):
+    @jaxtyped(typechecker=beartype)
+    def minimize(self, max_steps: int = 200, eps: float = 1e-6) -> GridOptimizeResult:
         r"""Approximate $\min_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
 
         Applies :func:`xbernstein.minimize`'s per-cell branch and bound to
@@ -310,7 +314,8 @@ class _C0Grid(eqx.Module):
         """
         return self._extreme(1.0, max_steps, eps)
 
-    def maximize(self, max_steps: int = 200, eps: float = 1e-6):
+    @jaxtyped(typechecker=beartype)
+    def maximize(self, max_steps: int = 200, eps: float = 1e-6) -> GridOptimizeResult:
         r"""Approximate $\max_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
 
         Implemented, like :func:`xbernstein.maximize`, as the negated
@@ -348,7 +353,10 @@ class _C0Grid(eqx.Module):
         )
         return interval_starts, interval_ends, valid
 
-    def _split_segment(self, start, end):
+    @jaxtyped(typechecker=beartype)
+    def _split_segment(
+        self, start: Shaped[jax.Array, " d"], end: Shaped[jax.Array, " d"]
+    ) -> GridSegment:
         start = self._point(start)
         end = self._point(end)
         delta = end - start
@@ -399,7 +407,10 @@ class _C0Grid(eqx.Module):
         mask = mask.at[0].set(mask[0] | no_piece)
         return GridSegment(cells, endpoints, mask)
 
-    def _segment_grid(self, start, end):
+    @jaxtyped(typechecker=beartype)
+    def _segment_grid(
+        self, start: Shaped[jax.Array, " d"], end: Shaped[jax.Array, " d"]
+    ) -> "C0Grid1D":
         r"""Restrict the interpolant to a straight segment as a 1D C0 grid.
 
         Built on :meth:`_split_segment`'s fixed-capacity decomposition: for
@@ -481,7 +492,8 @@ class _C0Grid(eqx.Module):
         f = jnp.concatenate([pieces[0], welded_tail], axis=-1)
         return C0Grid1D(x, f, degree=self.dimension * self.degree)
 
-    def _integrate_out(self, axis: int = 0):
+    @jaxtyped(typechecker=beartype)
+    def _integrate_out(self, axis: int = 0) -> "_C0Grid":
         r"""Integrate the represented function over one axis' full physical range.
 
         Because the tensor-product Bernstein basis factorizes across axes,
