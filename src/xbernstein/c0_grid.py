@@ -149,6 +149,14 @@ class _C0Grid(eqx.Module):
         )
         return jnp.clip((point - starts) / (ends - starts), 0.0, 1.0)
 
+    def _cell_physical_point(self, cell_index, local):
+        """Invert :meth:`_local_coordinates`: map a cell-local point back to physical space."""
+        starts = jnp.stack([axis[index] for axis, index in zip(self.axes, cell_index)])
+        ends = jnp.stack(
+            [axis[index + 1] for axis, index in zip(self.axes, cell_index)]
+        )
+        return starts + local * (ends - starts)
+
     def _cell_coefficients(self, cell_index):
         result = self.coefficients
         batch_dimensions = len(self.shape)
@@ -357,49 +365,80 @@ class _C0Grid(eqx.Module):
     def _segment_grid(self, start, end):
         r"""Restrict the interpolant to a straight segment as a 1D C0 grid.
 
-        The segment is split into pieces at every grid-line crossing, as in
-        :meth:`_split_segment`. On each piece, the tensor-product cell
-        polynomial's :meth:`~xbernstein._tensor_bernstein._TensorBernstein.segment`
-        gives the exact degree-``dimension * degree`` Bernstein restriction
-        along that piece. Concatenating the pieces' control points yields a
-        :class:`C0Grid1D` that reproduces ``self`` exactly along the segment
-        — this relies on a restriction's first and last control points
-        equalling the true function value at the piece's endpoints, so
-        consecutive pieces already share the one coefficient at their
-        common breakpoint.
+        Built on :meth:`_split_segment`'s fixed-capacity decomposition: for
+        every one of its ``segment_capacity`` slots (real crossing or
+        padding alike), the tensor-product cell polynomial's
+        :meth:`~xbernstein._tensor_bernstein._TensorBernstein.segment` gives
+        the exact degree-``dimension * degree`` Bernstein restriction over
+        that slot's local interval. Concatenating all ``segment_capacity``
+        slots' control points (sharing the one coefficient at each internal
+        breakpoint, since a restriction's first/last control points equal
+        the true function value there) yields a :class:`C0Grid1D` that
+        reproduces ``self`` exactly along the segment.
 
-        This method is not JIT-traceable: the number of pieces depends on
-        where the segment happens to cross grid lines, so the result's shape
-        is determined only once ``start`` and ``end`` are concrete.
+        Because the slot count is always ``segment_capacity`` — the static
+        worst-case number of grid-line crossings for this grid — regardless
+        of how many crossings ``start``/``end`` actually produce, the
+        result's shape never depends on runtime values, so, unlike the
+        earlier implementation, this method **is** ``jax.jit``-traceable.
+        The tradeoff is size: the result is always ``segment_capacity``
+        cells, not exactly as many as the segment actually crosses.
+
+        Padding slots (past the real crossings) default to a degenerate
+        zero-length interval at this grid's ``(0, ..., 0)`` corner, which
+        would otherwise show up as a discontinuity exactly at the segment's
+        true endpoint (`` t = jnp.linalg.norm(end - start)``) — the point
+        callers are most likely to query. Every padding slot's control
+        points are therefore overwritten with the constant value carried
+        forward from the last real slot, so the padded tail is a flat, C0
+        continuation of the true endpoint value rather than that unrelated
+        corner value.
 
         The returned grid's ``x`` axis is the Euclidean distance travelled
-        from ``start``, so it starts at ``0`` and ends at
-        ``jnp.linalg.norm(end - start)``.
+        from ``start``: real slots keep their true physical length, and it
+        starts at ``0`` and reaches ``jnp.linalg.norm(end - start)`` exactly
+        at the last real slot's boundary — the only region meaningful to
+        query. Padding slots get an arbitrary placeholder length (enough to
+        keep ``x`` strictly increasing, as :class:`C0Grid1D` requires) and
+        extend `x` past that point purely so the grid remains well-formed.
         """
         start = self._point(start)
         end = self._point(end)
-        delta = end - start
-        length = jnp.linalg.norm(delta)
-        if not bool(length > 0.0):
-            raise ValueError("start and end must not coincide")
+        length = jnp.linalg.norm(end - start)
+        length = eqx.error_if(length, length <= 0.0, "start and end must not coincide")
 
-        interval_starts, interval_ends, valid = self._segment_parameters(start, end)
-        interval_starts = interval_starts[valid]
-        interval_ends = interval_ends[valid]
+        segment = self._split_segment(start, end)
+        cells, endpoints, mask = (
+            segment.cell_indices,
+            segment.local_endpoints,
+            segment.valid_mask,
+        )
 
-        pieces = []
-        for piece_start, piece_end in zip(interval_starts, interval_ends):
-            physical_start = start + piece_start * delta
-            physical_end = start + piece_end * delta
-            cell = self.cell_index(0.5 * (physical_start + physical_end))
-            local_start = self._local_coordinates(physical_start, cell)
-            local_end = self._local_coordinates(physical_end, cell)
-            polynomial = self.cell_interpolant(cell).segment(local_start, local_end)
-            pieces.append(polynomial.c)
+        def per_slot(cell, local_pair):
+            local_start, local_end = local_pair[0], local_pair[1]
+            coefficients = self.cell_interpolant(cell).segment(local_start, local_end).c
+            physical_start = self._cell_physical_point(cell, local_start)
+            physical_end = self._cell_physical_point(cell, local_end)
+            piece_length = jnp.linalg.norm(physical_end - physical_start)
+            return coefficients, piece_length
 
-        breakpoints = jnp.stack([interval_starts[0], *interval_ends])
-        x = breakpoints * length
-        f = jnp.concatenate([pieces[0]] + [piece[1:] for piece in pieces[1:]])
+        pieces, piece_lengths = jax.vmap(per_slot)(cells, endpoints)
+
+        effective_lengths = jnp.where(mask, piece_lengths, jnp.ones_like(piece_lengths))
+        x = jnp.concatenate(
+            [
+                jnp.zeros((1,), dtype=effective_lengths.dtype),
+                jnp.cumsum(effective_lengths),
+            ]
+        )
+
+        def weld(carry, slot):
+            piece, valid = slot
+            filled = jnp.where(valid, piece, jnp.full_like(piece, carry))
+            return filled[-1], filled
+
+        _, tail = jax.lax.scan(weld, pieces[0, -1], (pieces[1:], mask[1:]))
+        f = jnp.concatenate([pieces[0], tail[:, 1:].reshape(-1)])
         return C0Grid1D(x, f, degree=self.dimension * self.degree)
 
     def _integrate_out(self, axis: int = 0):
