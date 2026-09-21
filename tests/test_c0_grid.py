@@ -108,6 +108,12 @@ class C0GridValidationAndSmokeTest(unittest.TestCase):
                 jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 3.0]), jnp.zeros((5, 2))
             )
 
+    def test_rejects_non_positive_degree(self):
+        with self.assertRaisesRegex(ValueError, "degree must be"):
+            C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(1), degree=0)
+        with self.assertRaisesRegex(ValueError, "degree must be"):
+            C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(1), degree=-1)
+
     def test_split_segment_is_available_only_from_2d(self):
         grid = P1C0Grid2D(
             jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]), jnp.zeros((3, 3))
