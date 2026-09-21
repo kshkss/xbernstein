@@ -231,6 +231,27 @@ class C0GridSegmentGridTest(unittest.TestCase):
         npt.assert_allclose(jitted.x, eager.x, atol=1e-6)
         npt.assert_allclose(jitted.f, eager.f, atol=1e-6)
 
+    def test_supports_a_leading_batch_dimension(self):
+        x = jnp.array([0.0, 1.0, 2.0])
+        y = jnp.array([0.0, 1.0, 3.0])
+        X, Y = jnp.meshgrid(x, y, indexing="ij")
+        f0 = X + Y
+        f1 = 2.0 * X - Y
+        grid = P1C0Grid2D(x, y, jnp.stack([f0, f1]))
+        start = jnp.array([0.25, 0.5])
+        end = jnp.array([1.75, 2.5])
+
+        result = grid.segment_grid(start, end)
+        self.assertEqual(result.shape, (2,))
+
+        expected0 = P1C0Grid2D(x, y, f0).segment_grid(start, end)
+        expected1 = P1C0Grid2D(x, y, f1).segment_grid(start, end)
+
+        npt.assert_allclose(result.x, expected0.x, atol=1e-6)
+        npt.assert_allclose(result.x, expected1.x, atol=1e-6)
+        npt.assert_allclose(result.f[0], expected0.f, atol=1e-5)
+        npt.assert_allclose(result.f[1], expected1.f, atol=1e-5)
+
     def test_not_available_for_1d(self):
         self.assertFalse(
             hasattr(P1C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(2)), "segment_grid")

@@ -459,11 +459,14 @@ class _C0Grid(eqx.Module):
 
         def weld(carry, slot):
             piece, valid = slot
-            filled = jnp.where(valid, piece, jnp.full_like(piece, carry))
-            return filled[-1], filled
+            filled = jnp.where(valid, piece, carry[..., None])
+            return filled[..., -1], filled
 
-        _, tail = jax.lax.scan(weld, pieces[0, -1], (pieces[1:], mask[1:]))
-        f = jnp.concatenate([pieces[0], tail[:, 1:].reshape(-1)])
+        _, tail = jax.lax.scan(weld, pieces[0, ..., -1], (pieces[1:], mask[1:]))
+        welded_tail = jnp.moveaxis(tail[..., 1:], 0, -2).reshape(
+            pieces.shape[1:-1] + (-1,)
+        )
+        f = jnp.concatenate([pieces[0], welded_tail], axis=-1)
         return C0Grid1D(x, f, degree=self.dimension * self.degree)
 
     def _integrate_out(self, axis: int = 0):
