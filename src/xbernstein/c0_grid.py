@@ -328,11 +328,10 @@ class _C0Grid(eqx.Module):
             )
         parameters = jnp.sort(jnp.concatenate(candidates))
         interval_starts, interval_ends = parameters[:-1], parameters[1:]
-        tolerance = 16.0 * jnp.finfo(self.coefficients.dtype).eps
         valid = (
             jnp.isfinite(interval_starts)
             & jnp.isfinite(interval_ends)
-            & (interval_ends - interval_starts > tolerance)
+            & (interval_ends > interval_starts)
         )
         return interval_starts, interval_ends, valid
 
