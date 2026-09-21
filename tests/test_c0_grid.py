@@ -252,6 +252,25 @@ class C0GridSegmentGridTest(unittest.TestCase):
         npt.assert_allclose(result.f[0], expected0.f, atol=1e-5)
         npt.assert_allclose(result.f[1], expected1.f, atol=1e-5)
 
+    def test_preserves_narrow_intervals_near_a_grid_line(self):
+        # Regression test: a fixed absolute tolerance on interval width
+        # would drop this first, genuinely narrow-but-real interval
+        # ([0, 1e-7]) as spuriously "too small", shifting the restriction's
+        # apparent start to the interior crossing at x=1e-7 instead of the
+        # segment's true start at x=0.
+        x = jnp.array([0.0, 1e-7, 1.0])
+        y = jnp.array([0.0, 1.0])
+        X, Y = jnp.meshgrid(x, y, indexing="ij")
+        grid = P1C0Grid2D(x, y, X + Y)
+        start = jnp.array([0.0, 0.0])
+        end = jnp.array([1.0, 0.0])
+
+        result = grid.segment_grid(start, end)
+
+        npt.assert_allclose(result(jnp.array([0.0])), 0.0, atol=1e-9)
+        npt.assert_allclose(result(jnp.array([1e-7])), 1e-7, atol=1e-9)
+        npt.assert_allclose(result(jnp.array([1.0])), 1.0, atol=1e-6)
+
     def test_not_available_for_1d(self):
         self.assertFalse(
             hasattr(P1C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(2)), "segment_grid")
