@@ -103,15 +103,29 @@ class C0GridFaceContinuityTest(unittest.TestCase):
 
 class C0GridValidationAndSmokeTest(unittest.TestCase):
     def test_rejects_wrong_f_shape(self):
-        with self.assertRaisesRegex(ValueError, "f must end with shape"):
+        # Now caught earlier, at the constructor's own precise shape
+        # expression (Float[..., "*batch 2*nx-1 2*ny-1"]), before it would
+        # even reach _initialize's own "f must end with shape" check.
+        from jaxtyping import TypeCheckError
+
+        with self.assertRaises(TypeCheckError):
             P2C0Grid2D(
                 jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 3.0]), jnp.zeros((5, 2))
             )
 
     def test_rejects_non_positive_degree(self):
+        # degree=0 happens to produce a dof-shape expression that matches
+        # this f's actual shape (0*(nx-1)+1 == 1), so it slips past the
+        # constructor's own type check and is instead caught by
+        # _initialize's explicit value check.
         with self.assertRaisesRegex(ValueError, "degree must be"):
             C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(1), degree=0)
-        with self.assertRaisesRegex(ValueError, "degree must be"):
+        # A different non-positive degree whose dof-shape expression does
+        # NOT match this f's shape is instead caught earlier, at the
+        # constructor's own type boundary.
+        from jaxtyping import TypeCheckError
+
+        with self.assertRaises(TypeCheckError):
             C0Grid1D(jnp.array([0.0, 1.0]), jnp.zeros(1), degree=-1)
 
     def test_rejects_non_integer_degree(self):
@@ -152,6 +166,28 @@ class C0GridValidationAndSmokeTest(unittest.TestCase):
             grid.minimize(max_steps=1.5)
         with self.assertRaises(TypeCheckError):
             grid.integrate_out(axis=0.5)
+
+    def test_constructors_reject_f_with_the_wrong_degree_dependent_shape(self):
+        # Representative check that the precise per-axis shape expression
+        # (e.g. "2*nx-1") actually fires, not just "is an array": degree-1
+        # sized f passed to a degree-2 constructor.
+        from jaxtyping import TypeCheckError
+
+        x = jnp.array([0.0, 1.0, 2.0])
+        with self.assertRaises(TypeCheckError):
+            P2C0Grid1D(x, jnp.zeros(3))  # degree=2 needs 2*3-1=5, not 3
+        y = jnp.array([0.0, 1.0])
+        with self.assertRaises(TypeCheckError):
+            P3C0Grid2D(x, y, jnp.zeros((5, 3)))  # degree=3 needs (7, 4)
+
+    def test_constructors_reject_non_float_arrays(self):
+        from jaxtyping import TypeCheckError
+
+        x_int = jnp.array([0, 1, 2])
+        with self.assertRaises(TypeCheckError):
+            P1C0Grid1D(x_int, jnp.array([0.0, 1.0, 2.0]))
+        with self.assertRaises(TypeCheckError):
+            P1C0Grid1D(jnp.array([0.0, 1.0, 2.0]), jnp.array([0, 1, 2]))
 
     def test_split_segment_is_available_only_from_2d(self):
         grid = P1C0Grid2D(
