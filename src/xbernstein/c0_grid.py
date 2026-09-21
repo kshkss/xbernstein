@@ -67,7 +67,9 @@ class _C0Grid(eqx.Module):
 
         dtype = jnp.result_type(f, *coordinates, jnp.float32)
         f = f.astype(dtype)
-        f = eqx.error_if(f, jnp.any(~jnp.isfinite(f)), "f must contain only finite values")
+        f = eqx.error_if(
+            f, jnp.any(~jnp.isfinite(f)), "f must contain only finite values"
+        )
         coordinates = tuple(axis.astype(dtype) for axis in coordinates)
 
         object.__setattr__(self, "axes", coordinates)
@@ -152,7 +154,9 @@ class _C0Grid(eqx.Module):
         for offset in range(self.dimension):
             axis_position = batch_dimensions + offset
             start = cell_index[offset] * self.degree
-            result = jax.lax.dynamic_slice_in_dim(result, start, window, axis=axis_position)
+            result = jax.lax.dynamic_slice_in_dim(
+                result, start, window, axis=axis_position
+            )
         return result
 
     def cell_interpolant(self, cell_index):
@@ -179,9 +183,14 @@ class _C0Grid(eqx.Module):
         local = self._local_coordinates(point, cell)
         return self.cell_interpolant(cell)(*tuple(local))
 
-    def _split_segment(self, start, end):
-        start = self._point(start)
-        end = self._point(end)
+    def _segment_parameters(self, start, end):
+        """Return sorted per-axis grid-line crossing parameters along a segment.
+
+        ``start`` and ``end`` are physical points; the result gives every
+        interval of the parameter $t\\in[0,1]$ (with $t=0$ at ``start`` and
+        $t=1$ at ``end``) between consecutive grid-line crossings, along with
+        a mask of which intervals have positive width.
+        """
         delta = end - start
         candidates = [jnp.asarray([0.0, 1.0], dtype=self.coefficients.dtype)]
         for axis_index, axis in enumerate(self.axes):
@@ -202,6 +211,13 @@ class _C0Grid(eqx.Module):
             & jnp.isfinite(interval_ends)
             & (interval_ends - interval_starts > tolerance)
         )
+        return interval_starts, interval_ends, valid
+
+    def _split_segment(self, start, end):
+        start = self._point(start)
+        end = self._point(end)
+        delta = end - start
+        interval_starts, interval_ends, valid = self._segment_parameters(start, end)
         capacity = self.segment_capacity
         cells = jnp.zeros((capacity, self.dimension), dtype=jnp.int32)
         endpoints = jnp.zeros(
@@ -248,6 +264,121 @@ class _C0Grid(eqx.Module):
         mask = mask.at[0].set(mask[0] | no_piece)
         return GridSegment(cells, endpoints, mask)
 
+    def _segment_grid(self, start, end):
+        r"""Restrict the interpolant to a straight segment as a 1D C0 grid.
+
+        The segment is split into pieces at every grid-line crossing, as in
+        :meth:`_split_segment`. On each piece, the tensor-product cell
+        polynomial's :meth:`~xbernstein._tensor_bernstein._TensorBernstein.segment`
+        gives the exact degree-``dimension * degree`` Bernstein restriction
+        along that piece. Concatenating the pieces' control points yields a
+        :class:`C0Grid1D` that reproduces ``self`` exactly along the segment
+        — this relies on a restriction's first and last control points
+        equalling the true function value at the piece's endpoints, so
+        consecutive pieces already share the one coefficient at their
+        common breakpoint.
+
+        This method is not JIT-traceable: the number of pieces depends on
+        where the segment happens to cross grid lines, so the result's shape
+        is determined only once ``start`` and ``end`` are concrete.
+
+        The returned grid's ``x`` axis is the Euclidean distance travelled
+        from ``start``, so it starts at ``0`` and ends at
+        ``jnp.linalg.norm(end - start)``.
+        """
+        start = self._point(start)
+        end = self._point(end)
+        delta = end - start
+        length = jnp.linalg.norm(delta)
+        if not bool(length > 0.0):
+            raise ValueError("start and end must not coincide")
+
+        interval_starts, interval_ends, valid = self._segment_parameters(start, end)
+        interval_starts = interval_starts[valid]
+        interval_ends = interval_ends[valid]
+
+        pieces = []
+        for piece_start, piece_end in zip(interval_starts, interval_ends):
+            physical_start = start + piece_start * delta
+            physical_end = start + piece_end * delta
+            cell = self.cell_index(0.5 * (physical_start + physical_end))
+            local_start = self._local_coordinates(physical_start, cell)
+            local_end = self._local_coordinates(physical_end, cell)
+            polynomial = self.cell_interpolant(cell).segment(local_start, local_end)
+            pieces.append(polynomial.c)
+
+        breakpoints = jnp.stack([interval_starts[0], *interval_ends])
+        x = breakpoints * length
+        f = jnp.concatenate([pieces[0]] + [piece[1:] for piece in pieces[1:]])
+        return C0Grid1D(x, f, degree=self.dimension * self.degree)
+
+    def _integrate_out(self, axis: int = 0):
+        r"""Integrate the represented function over one axis' full physical range.
+
+        Because the tensor-product Bernstein basis factorizes across axes,
+        the exact unit-parameter integral along ``axis`` reduces to
+        ``sum(window, axis) / (degree + 1)`` regardless of what the other
+        coefficient-array axes represent (see
+        :meth:`~xbernstein._tensor_bernstein._TensorBernstein.integrate_out`).
+        Applying that reduction to each physical cell's window along
+        ``axis`` (scaled by that cell's physical width) and summing over
+        cells gives the exact definite integral over the axis' full
+        physical range, directly on the shared refined array — the
+        surviving axes' overlapping-window structure is untouched, so C0
+        continuity along them is preserved automatically.
+
+        Returns a ``(dimension - 1)``-dimensional grid of the same
+        ``degree`` over the remaining axes, in their original order. Not
+        available on a 1D grid: integrating out its sole axis would yield a
+        scalar, not a grid.
+
+        Unlike :meth:`_segment_grid`, this method's output shape does not
+        depend on runtime values (``self.grid_shape`` is static), so it is
+        ``jax.jit``/``jax.vmap``-traceable.
+        """
+        if not 0 <= axis < self.dimension:
+            raise ValueError(f"axis must be in [0, {self.dimension}), got {axis}")
+
+        batch_dimensions = len(self.shape)
+        axis_position = batch_dimensions + axis
+        degree = self.degree
+        cell_count = self.grid_shape[axis] - 1
+        widths = jnp.diff(self.axes[axis])
+
+        accumulator = 0.0
+        for c in range(cell_count):
+            window = jax.lax.slice_in_dim(
+                self.coefficients,
+                c * degree,
+                c * degree + degree + 1,
+                axis=axis_position,
+            )
+            accumulator = accumulator + widths[c] * jnp.sum(
+                window, axis=axis_position
+            ) / (degree + 1)
+
+        new_axes = self.axes[:axis] + self.axes[axis + 1 :]
+        grid_types = {
+            1: (P1C0Grid1D, P2C0Grid1D, P3C0Grid1D),
+            2: (P1C0Grid2D, P2C0Grid2D, P3C0Grid2D),
+            3: (P1C0Grid3D, P2C0Grid3D, P3C0Grid3D),
+        }
+        cls = grid_types[self.dimension - 1][degree - 1]
+        return cls(*new_axes, accumulator)
+
+
+class C0Grid1D(_C0Grid):
+    """Piecewise C0 interpolation of an arbitrary degree on a 1D rectilinear grid.
+
+    Unlike :class:`P1C0Grid1D`–:class:`P3C0Grid1D`, ``degree`` is a
+    constructor argument rather than fixed by the class. This is what lets
+    :meth:`_C0Grid.segment_grid` return an exact restriction whose degree
+    (``dimension * degree`` of the source grid) can exceed 3.
+    """
+
+    def __init__(self, x, f, degree):
+        self._initialize((x,), f, dimension=1, degree=degree)
+
 
 class P1C0Grid1D(_C0Grid):
     """Piecewise-linear C0 interpolation on a one-dimensional rectilinear grid."""
@@ -277,6 +408,8 @@ class P1C0Grid2D(_C0Grid):
         self._initialize((x, y), f, dimension=2, degree=1)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P2C0Grid2D(_C0Grid):
@@ -286,6 +419,8 @@ class P2C0Grid2D(_C0Grid):
         self._initialize((x, y), f, dimension=2, degree=2)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P3C0Grid2D(_C0Grid):
@@ -295,6 +430,8 @@ class P3C0Grid2D(_C0Grid):
         self._initialize((x, y), f, dimension=2, degree=3)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P1C0Grid3D(_C0Grid):
@@ -304,6 +441,8 @@ class P1C0Grid3D(_C0Grid):
         self._initialize((x, y, z), f, dimension=3, degree=1)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P2C0Grid3D(_C0Grid):
@@ -313,6 +452,8 @@ class P2C0Grid3D(_C0Grid):
         self._initialize((x, y, z), f, dimension=3, degree=2)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P3C0Grid3D(_C0Grid):
@@ -322,6 +463,8 @@ class P3C0Grid3D(_C0Grid):
         self._initialize((x, y, z), f, dimension=3, degree=3)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P1C0Grid4D(_C0Grid):
@@ -331,6 +474,8 @@ class P1C0Grid4D(_C0Grid):
         self._initialize((x, y, z, w), f, dimension=4, degree=1)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P2C0Grid4D(_C0Grid):
@@ -340,6 +485,8 @@ class P2C0Grid4D(_C0Grid):
         self._initialize((x, y, z, w), f, dimension=4, degree=2)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
 
 
 class P3C0Grid4D(_C0Grid):
@@ -349,3 +496,5 @@ class P3C0Grid4D(_C0Grid):
         self._initialize((x, y, z, w), f, dimension=4, degree=3)
 
     split_segment = _C0Grid._split_segment
+    segment_grid = _C0Grid._segment_grid
+    integrate_out = _C0Grid._integrate_out
