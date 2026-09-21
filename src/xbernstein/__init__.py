@@ -47,6 +47,7 @@ from .piecewise_rational_curve_3d import PiecewiseRationalCurve3D
 from .piecewise_curve_3d import PiecewiseCurve3D
 from .c0_grid import (
     C0Grid1D,
+    GridOptimizeResult,
     P1C0Grid1D,
     P1C0Grid2D,
     P1C0Grid3D,
@@ -104,6 +105,7 @@ __all__ = [
     "PiecewiseRationalCurve3D",
     "PiecewiseCurve3D",
     "C0Grid1D",
+    "GridOptimizeResult",
     "P1C0Grid1D",
     "P1C0Grid2D",
     "P1C0Grid3D",

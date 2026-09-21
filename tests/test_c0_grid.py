@@ -355,6 +355,10 @@ class C0GridExtremaTest(unittest.TestCase):
         npt.assert_allclose(maximum.x, jnp.array([3.0]), atol=1e-6)
         npt.assert_allclose(grid(minimum.x), minimum.f, atol=1e-6)
         npt.assert_allclose(grid(maximum.x), maximum.f, atol=1e-6)
+        # x=0 is uniquely the minimum, only in cell 0; x=3 is uniquely the
+        # maximum, only in the last cell (2).
+        npt.assert_array_equal(minimum.cell, jnp.array([0]))
+        npt.assert_array_equal(maximum.cell, jnp.array([2]))
 
     def test_matches_module_level_minimize_and_maximize_on_a_single_cell_grid(self):
         a, b = 0.3, 0.4
@@ -377,6 +381,9 @@ class C0GridExtremaTest(unittest.TestCase):
         npt.assert_allclose(result_max.x, expected_max.x, atol=1e-3)
         npt.assert_allclose(grid(result_min.x), result_min.f, rtol=1e-5, atol=1e-6)
         npt.assert_allclose(grid(result_max.x), result_max.f, rtol=1e-5, atol=1e-6)
+        # Only one cell exists, so it must be reported both times.
+        npt.assert_array_equal(result_min.cell, jnp.array([0, 0]))
+        npt.assert_array_equal(result_max.cell, jnp.array([0, 0]))
 
     def test_finds_extrema_hidden_in_non_corner_cells(self):
         x = jnp.array([0.0, 1.0, 2.0, 3.0])
@@ -393,6 +400,33 @@ class C0GridExtremaTest(unittest.TestCase):
         npt.assert_allclose(minimum.x, jnp.array([2.0, 1.0]), atol=1e-3)
         npt.assert_allclose(grid(maximum.x), maximum.f, atol=1e-5)
         npt.assert_allclose(grid(minimum.x), minimum.f, atol=1e-5)
+        # Degree 1 means the extremum sits exactly on a shared vertex, so
+        # any of the (up to 4) cells touching it is a legitimate answer —
+        # check membership in that set rather than pinning one cell.
+        self.assertIn(tuple(maximum.cell.tolist()), {(0, 1), (0, 2), (1, 1), (1, 2)})
+        self.assertIn(tuple(minimum.cell.tolist()), {(1, 0), (1, 1), (2, 0), (2, 1)})
+
+    def test_reports_the_unique_interior_cell_containing_the_minimum(self):
+        x = jnp.array([0.0, 1.0, 2.0, 3.0])
+        y = jnp.array([0.0, 1.0, 2.0, 3.0])
+        a, b = 0.3, 0.4
+        f_u = jnp.array([a**2, a**2 - a, (1 - a) ** 2])
+        f_v = jnp.array([b**2, b**2 - b, (1 - b) ** 2])
+        bump = f_u[:, None] + f_v[None, :]
+        # A large baseline everywhere except the degree-2 window belonging
+        # to cell (1, 1), where the true interior minimum is exactly 0 at
+        # local (a, b) — verified separately to be far below every
+        # neighboring cell's own minimum (their windows only ever see the
+        # bump's boundary values, whose own minimum along that edge is
+        # ~0.09, well above 0).
+        f = jnp.full((7, 7), 1000.0).at[2:5, 2:5].set(bump)
+        grid = P2C0Grid2D(x, y, f)
+
+        result = grid.minimize(max_steps=200, eps=1e-8)
+
+        npt.assert_allclose(result.f, 0.0, atol=1e-5)
+        npt.assert_array_equal(result.cell, jnp.array([1, 1]))
+        npt.assert_allclose(grid(result.x), result.f, atol=1e-5)
 
     def test_supports_a_leading_batch_dimension(self):
         x = jnp.array([0.0, 1.0, 2.0])
@@ -404,10 +438,15 @@ class C0GridExtremaTest(unittest.TestCase):
 
         self.assertEqual(minimum.f.shape, (2,))
         self.assertEqual(minimum.x.shape, (2, 1))
+        self.assertEqual(minimum.cell.shape, (2, 1))
         npt.assert_allclose(minimum.f, jnp.array([0.0, 0.0]), atol=1e-6)
         npt.assert_allclose(minimum.x[:, 0], jnp.array([0.0, 2.0]), atol=1e-6)
         npt.assert_allclose(maximum.f, jnp.array([2.0, 5.0]), atol=1e-6)
         npt.assert_allclose(maximum.x[:, 0], jnp.array([2.0, 0.0]), atol=1e-6)
+        # f0=[0,1,2] is increasing: its min is uniquely cell 0, max cell 1.
+        # f1=[5,3,0] is decreasing: its min is uniquely cell 1, max cell 0.
+        npt.assert_array_equal(minimum.cell[:, 0], jnp.array([0, 1]))
+        npt.assert_array_equal(maximum.cell[:, 0], jnp.array([1, 0]))
 
 
 if __name__ == "__main__":
