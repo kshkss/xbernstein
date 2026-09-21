@@ -59,9 +59,17 @@ its per-cell pieces at grid-line crossings.
 interpolant to a straight segment and returns that restriction as an exact
 `C0Grid1D`: one whose degree is `dimension * degree`, since each piece is
 the tensor cell polynomial's exact 1D restriction along the segment. Its `x`
-axis is the Euclidean distance travelled from `start`. Because the number of
-pieces depends on where the segment crosses grid lines, `segment_grid`
-requires concrete `start`/`end` values and cannot be traced under `jax.jit`.
+axis is the Euclidean distance travelled from `start`. It is built on
+`split_segment`'s fixed-capacity decomposition, so — unlike an approach that
+sizes the result to exactly how many cells the segment happens to cross —
+its output is always `segment_capacity` cells, regardless of how many
+crossings `start`/`end` actually produce; the tradeoff for that static shape
+is that `segment_grid` **is** `jax.jit`-traceable. Only `t` in
+`[0, jnp.linalg.norm(end - start)]` is meaningful to query: cells beyond the
+real crossings are padding, filled with a flat, C0-continuous extension of
+the true endpoint value (not left as the discontinuous, unrelated default
+that `split_segment`'s own padding slots carry) so a query exactly at the
+true endpoint is unaffected.
 
 `integrate_out` (also available for two dimensions and up) integrates the
 represented function over one axis' full physical range and returns the

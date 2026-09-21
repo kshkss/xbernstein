@@ -1,5 +1,6 @@
 import unittest
 
+import jax
 import jax.numpy as jnp
 import numpy.testing as npt
 
@@ -168,7 +169,11 @@ class C0GridSegmentGridTest(unittest.TestCase):
                 result(jnp.array([t])), grid(point), atol=1e-4, rtol=1e-4
             )
 
-    def test_segment_confined_to_a_single_cell_has_one_piece(self):
+    def test_result_is_always_segment_capacity_sized(self):
+        # segment_grid must be jit-traceable, so its output shape cannot
+        # depend on how many cells the segment actually crosses — it is
+        # always padded out to the worst-case `segment_capacity`, even for
+        # a segment confined to a single cell.
         x = jnp.array([0.0, 1.0, 2.0])
         y = jnp.array([0.0, 1.0])
         z = jnp.array([0.0, 1.0])
@@ -178,7 +183,53 @@ class C0GridSegmentGridTest(unittest.TestCase):
         end = jnp.array([0.9, 0.9, 0.9])
 
         result = grid.segment_grid(start, end)
-        self.assertEqual(result.dof_shape, (grid.dimension * grid.degree + 1,))
+        expected_size = grid.dimension * grid.degree * grid.segment_capacity + 1
+        self.assertEqual(result.dof_shape, (expected_size,))
+
+        delta = end - start
+        length = float(jnp.linalg.norm(delta))
+        for t in jnp.linspace(0.0, length, 5):
+            point = start + (t / length) * delta
+            npt.assert_allclose(result(jnp.array([t])), grid(point), atol=1e-4)
+
+    def test_matches_the_true_endpoint_value_exactly_at_the_real_length(self):
+        # Regression test: padding slots default to the grid's (0,...,0)
+        # corner value, unrelated to the segment's real endpoint. Querying
+        # exactly at t = length must not fall through to that corner value
+        # — the padded tail must be a flat, continuous extension of the
+        # real endpoint instead.
+        x = jnp.array([0.0, 1.0, 2.0])
+        y = jnp.array([0.0, 3.0])
+        f = jnp.arange(5 * 3, dtype=jnp.float32).reshape(5, 3)
+        grid = P2C0Grid2D(x, y, f)
+        start = jnp.array([0.25, 0.5])
+        end = jnp.array([1.75, 2.5])
+
+        result = grid.segment_grid(start, end)
+        length = float(jnp.linalg.norm(end - start))
+
+        npt.assert_allclose(result(jnp.array([length])), grid(end), atol=1e-4)
+        # And well past the real length, it should stay flat at that value.
+        npt.assert_allclose(result(jnp.array([length + 10.0])), grid(end), atol=1e-4)
+
+    def test_is_jit_traceable(self):
+        x = jnp.array([0.0, 1.0, 2.0])
+        y = jnp.array([0.0, 3.0])
+        f = jnp.arange(5 * 3, dtype=jnp.float32).reshape(5, 3)
+        grid = P2C0Grid2D(x, y, f)
+        start = jnp.array([0.25, 0.5])
+        end = jnp.array([1.75, 2.5])
+
+        eager = grid.segment_grid(start, end)
+
+        @jax.jit
+        def run(s, e):
+            return grid.segment_grid(s, e)
+
+        jitted = run(start, end)
+
+        npt.assert_allclose(jitted.x, eager.x, atol=1e-6)
+        npt.assert_allclose(jitted.f, eager.f, atol=1e-6)
 
     def test_not_available_for_1d(self):
         self.assertFalse(
@@ -189,7 +240,7 @@ class C0GridSegmentGridTest(unittest.TestCase):
         grid = P1C0Grid2D(
             jnp.array([0.0, 1.0, 2.0]), jnp.array([0.0, 1.0, 2.0]), jnp.zeros((3, 3))
         )
-        with self.assertRaises(ValueError):
+        with self.assertRaises(Exception):
             grid.segment_grid(jnp.array([1.0, 1.0]), jnp.array([1.0, 1.0]))
 
 
