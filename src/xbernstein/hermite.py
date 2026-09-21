@@ -62,17 +62,17 @@ def _multi_indices(
     )
 
 
-def _validate_groups(
+def _validate_jets(
     dimensions: int,
-    degree: int,
+    jet_size: int,
     groups: tuple[Float[jax.Array, "..."], ...],
 ) -> tuple[tuple[jax.Array, ...], tuple[int, ...]]:
-    r = (degree + 1) // 2
+    r = jet_size
     expected_groups = (r - 1) * dimensions + 1
     if len(groups) != expected_groups:
         raise TypeError(
-            f"degree-{degree} {dimensions}D interpolation requires "
-            f"{expected_groups} derivative groups"
+            f"{dimensions}D jet_size-{r} data requires {expected_groups} "
+            "derivative groups"
         )
     values = tuple(jnp.asarray(group) for group in groups)
     batch_shape = values[0].shape[:-dimensions]
@@ -91,31 +91,81 @@ def _validate_groups(
     return values, batch_shape
 
 
-def _interpolate(
+def _validate_groups(
     dimensions: int,
     degree: int,
     groups: tuple[Float[jax.Array, "..."], ...],
-) -> Bernstein | Bernstein2D | Bernstein3D | Bernstein4D:
+) -> tuple[tuple[jax.Array, ...], tuple[int, ...]]:
     r = (degree + 1) // 2
     expected_groups = (r - 1) * dimensions + 1
-    values, batch_shape = _validate_groups(dimensions, degree, groups)
+    if len(groups) != expected_groups:
+        raise TypeError(
+            f"degree-{degree} {dimensions}D interpolation requires "
+            f"{expected_groups} derivative groups"
+        )
+    return _validate_jets(dimensions, r, groups)
+
+
+def _boundary_jet_bezier_coefficients_nd(
+    dimensions: int,
+    degree: int,
+    jet_size: int,
+    groups: tuple[Float[jax.Array, "..."], ...],
+) -> tuple[jax.Array, jax.Array]:
+    r"""Compute jet-determined Bezier coefficients at boundary-range multi-indices.
+
+    Generalizes the combinatorics below by decoupling the output ``degree``
+    from the vertex ``jet_size`` (``r``): each axis of a control multi-index
+    is independently boundary-range (within ``jet_size`` of either end,
+    i.e. index ``< r`` or ``> degree - r``) or interior-range. Entries
+    where *every* axis is boundary-range are computed from the vertex jets
+    with the same weighted tensor-product sum as a fully-determined
+    Hermite conversion; every other entry is left as a ``0.0`` placeholder
+    (the caller is expected to fill those from separate, raw interior
+    data). Returns ``(coefficients, boundary_mask)``: ``coefficients`` has
+    shape ``batch_shape + (degree + 1,) * dimensions``, and
+    ``boundary_mask`` has shape ``(degree + 1,) * dimensions`` (no batch
+    axes), ``True`` exactly at jet-determined positions.
+
+    When ``degree == 2 * jet_size - 1`` every multi-index is boundary-range
+    (the two ranges ``[0, r)`` and ``(degree - r, degree]`` already cover
+    ``[0, degree]``), so this reduces exactly to a full Hermite conversion.
+    """
+    r = jet_size
+    expected_groups = (r - 1) * dimensions + 1
+    values, batch_shape = _validate_jets(dimensions, r, groups)
 
     coefficients = jnp.zeros(batch_shape + (degree + 1,) * dimensions, values[0].dtype)
+    boundary_mask = jnp.zeros((degree + 1,) * dimensions, dtype=bool)
     scales = tuple(
         math.factorial(degree - k) / math.factorial(degree) for k in range(r)
     )
     for control_index in itertools.product(range(degree + 1), repeat=dimensions):
-        vertex = tuple(0 if index < r else 1 for index in control_index)
+        vertex = []
+        distances = []
+        boundary = True
+        for index in control_index:
+            if index < r:
+                vertex.append(0)
+                distances.append(index)
+            elif index > degree - r:
+                vertex.append(1)
+                distances.append(degree - index)
+            else:
+                boundary = False
+                break
+        if not boundary:
+            continue
+        vertex = tuple(vertex)
         coefficient = jnp.zeros(batch_shape, values[0].dtype)
         for total in range(expected_groups):
             for derivative_index, alpha in enumerate(
                 _multi_indices(dimensions, r, total)
             ):
                 weight = 1.0
-                for index, derivative_order, endpoint in zip(
-                    control_index, alpha, vertex
+                for distance, derivative_order, endpoint in zip(
+                    distances, alpha, vertex
                 ):
-                    distance = index if endpoint == 0 else degree - index
                     if derivative_order > distance:
                         weight = 0.0
                         break
@@ -133,9 +183,65 @@ def _interpolate(
                     derivative = values[total][(...,) + vertex + (derivative_index,)]
                 coefficient = coefficient + weight * derivative
         coefficients = coefficients.at[(...,) + control_index].set(coefficient)
+        boundary_mask = boundary_mask.at[control_index].set(True)
+
+    return coefficients, boundary_mask
+
+
+def _interpolate(
+    dimensions: int,
+    degree: int,
+    groups: tuple[Float[jax.Array, "..."], ...],
+) -> Bernstein | Bernstein2D | Bernstein3D | Bernstein4D:
+    r = (degree + 1) // 2
+    expected_groups = (r - 1) * dimensions + 1
+    if len(groups) != expected_groups:
+        raise TypeError(
+            f"degree-{degree} {dimensions}D interpolation requires "
+            f"{expected_groups} derivative groups"
+        )
+    coefficients, _ = _boundary_jet_bezier_coefficients_nd(dimensions, degree, r, groups)
 
     polynomial_types = (None, Bernstein, Bernstein2D, Bernstein3D, Bernstein4D)
     return polynomial_types[dimensions](coefficients)
+
+
+def _endpoint_bezier_coefficients_1d(
+    degree: int,
+    jet_size: int,
+    left_jets: tuple[jax.Array, ...],
+    right_jets: tuple[jax.Array, ...],
+    interior_coefficients: jax.Array,
+) -> jax.Array:
+    r"""Assemble one cell's Bezier coefficients from boundary jets and interior DOFs.
+
+    ``left_jets``/``right_jets`` hold ``jet_size`` derivative orders
+    ``p^{(k)}(0)``/``p^{(k)}(1)`` each shaped ``value_shape``; the boundary
+    controls ``c_i``/``c_{n-i}`` for ``0 <= i < jet_size`` follow the same
+    endpoint-conversion identity used by :func:`_interpolate`. The remaining
+    ``degree + 1 - 2 * jet_size`` interior controls are copied verbatim from
+    ``interior_coefficients`` (shape ``value_shape + (interior_dof_count,)``).
+    Returns an array shaped ``value_shape + (degree + 1,)``.
+    """
+    n, r = degree, jet_size
+    scales = tuple(math.factorial(n - k) / math.factorial(n) for k in range(r))
+
+    columns = []
+    for i in range(r):
+        columns.append(
+            sum(math.comb(i, k) * scales[k] * left_jets[k] for k in range(i + 1))
+        )
+    for j in range(interior_coefficients.shape[-1]):
+        columns.append(interior_coefficients[..., j])
+    for i in reversed(range(r)):
+        columns.append(
+            sum(
+                ((-1) ** k) * math.comb(i, k) * scales[k] * right_jets[k]
+                for k in range(i + 1)
+            )
+        )
+
+    return jnp.stack(columns, axis=-1)
 
 
 @jaxtyped(typechecker=beartype)
