@@ -1,0 +1,98 @@
+# C0 tensor-product Bernstein grids
+
+## One-dimensional
+
+::: xbernstein.P1C0Grid1D
+
+::: xbernstein.P2C0Grid1D
+
+::: xbernstein.P3C0Grid1D
+
+::: xbernstein.C0Grid1D
+
+## Two-dimensional
+
+::: xbernstein.P1C0Grid2D
+
+::: xbernstein.P2C0Grid2D
+
+::: xbernstein.P3C0Grid2D
+
+## Three-dimensional
+
+::: xbernstein.P1C0Grid3D
+
+::: xbernstein.P2C0Grid3D
+
+::: xbernstein.P3C0Grid3D
+
+## Four-dimensional
+
+::: xbernstein.P1C0Grid4D
+
+::: xbernstein.P2C0Grid4D
+
+::: xbernstein.P3C0Grid4D
+
+Each class stores one dense control-point array on a *refined* structured
+grid: along every axis, each original grid cell is subdivided into `degree`
+equal parameter steps, so a cell's local `(degree + 1) ** dimension`
+tensor-product Bernstein control points are simply an overlapping window of
+that array (stride `degree`, window size `degree + 1` per axis). Two
+neighboring cells therefore share their entire common boundary control-point
+sub-array exactly — not just the corner values — which is what makes the
+family C0 (not just continuous at grid vertices) for `degree > 1`.
+
+Only entries landing on an original grid vertex (index `0` or `degree` along
+every axis) equal the true function value there; every other stored entry is
+a raw shared Bernstein coefficient, matching the "freedoms are Bernstein
+coefficients, not Lagrange values" convention used elsewhere in this
+library. For `degree = 1` the refined grid coincides with the original grid,
+so `f` is simply the function's value at every grid vertex (ordinary
+multilinear interpolation).
+
+`split_segment` (available for two dimensions and up, matching
+[`HermiteGrid2D`–`4D`](hermite_grid.md)) decomposes a straight segment into
+its per-cell pieces at grid-line crossings.
+
+`segment_grid` (also available for two dimensions and up) restricts the
+interpolant to a straight segment and returns that restriction as an exact
+`C0Grid1D`: one whose degree is `dimension * degree`, since each piece is
+the tensor cell polynomial's exact 1D restriction along the segment. Its `x`
+axis is the Euclidean distance travelled from `start`. It is built on
+`split_segment`'s fixed-capacity decomposition, so — unlike an approach that
+sizes the result to exactly how many cells the segment happens to cross —
+its output is always `segment_capacity` cells, regardless of how many
+crossings `start`/`end` actually produce; the tradeoff for that static shape
+is that `segment_grid` **is** `jax.jit`-traceable. Only `t` in
+`[0, jnp.linalg.norm(end - start)]` is meaningful to query: cells beyond the
+real crossings are padding, filled with a flat, C0-continuous extension of
+the true endpoint value (not left as the discontinuous, unrelated default
+that `split_segment`'s own padding slots carry) so a query exactly at the
+true endpoint is unaffected.
+
+`integrate_out` (also available for two dimensions and up) integrates the
+represented function over one axis' full physical range and returns the
+`dimension - 1`-dimensional grid of the same `degree` over the remaining
+axes. Because the tensor-product Bernstein basis factorizes across axes,
+this reduces to a per-cell, width-weighted sum directly on the shared
+refined array — no reconstruction of individual cells is needed. Unlike
+`segment_grid`, the result's shape depends only on the grid's static shape,
+so `integrate_out` is `jax.jit`/`jax.vmap`-traceable.
+
+`minimize`/`maximize` (available in every dimension, including 1D) find the
+global extremum of the represented function over the grid's whole physical
+domain. Each cell's `cell_interpolant` is minimized independently with the
+same branch-and-bound solver as `xbernstein.minimize` — the convex-hull
+certification is only ever local to one cell — and the
+best result across all cells is kept, so cost scales with the total number
+of cells. They return a `GridOptimizeResult(f, x, cell)`: unlike
+`xbernstein.OptimizeResult`, the returned `x` is a *physical* point with
+trailing shape `(dimension,)` in every dimension, matching this class's
+other physical-point arguments and results, and `cell` is the winning
+cell's index — pass it straight to `cell_interpolant`. When several cells
+tie exactly (for example a degree-1 grid whose extremum sits on a shared
+vertex), `cell` is whichever tied cell the per-cell search visits first, not
+a canonical choice. As with the underlying per-cell solvers, `max_steps`/
+`eps` must stay concrete Python values, so `minimize`/`maximize` cannot be
+nested inside an outer `jax.jit`.
