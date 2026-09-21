@@ -31,7 +31,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from beartype import beartype
-from jaxtyping import Shaped, jaxtyped
+from jaxtyping import Float, Int, jaxtyped
 
 from .bernstein import Bernstein, _minimize
 from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
@@ -40,6 +40,7 @@ from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 from .hermite_grid import GridSegment
 
 
+@jaxtyped(typechecker=beartype)
 class GridOptimizeResult(NamedTuple):
     r"""Result of :meth:`_C0Grid.minimize`/:meth:`_C0Grid.maximize`.
 
@@ -51,9 +52,9 @@ class GridOptimizeResult(NamedTuple):
     for the cell containing ``x``.
     """
 
-    f: jax.Array
-    x: jax.Array
-    cell: jax.Array
+    f: Float[jax.Array, "*batch"]
+    x: Float[jax.Array, "*batch d"]
+    cell: Int[jax.Array, "*batch d"]
 
 
 @jaxtyped(typechecker=beartype)
@@ -68,8 +69,8 @@ class _C0Grid(eqx.Module):
     @jaxtyped(typechecker=beartype)
     def _initialize(
         self,
-        axes: tuple[Shaped[jax.Array, " _"], ...],
-        f: Shaped[jax.Array, "..."],
+        axes: tuple[Float[jax.Array, " _"], ...],
+        f: Float[jax.Array, "..."],
         dimension: int,
         degree: int,
     ):
@@ -110,32 +111,39 @@ class _C0Grid(eqx.Module):
         object.__setattr__(self, "degree", degree)
 
     @property
-    def f(self):
+    @jaxtyped(typechecker=beartype)
+    def f(self) -> Float[jax.Array, "..."]:
         """Return the stored control-point array on the refined grid."""
         return self.coefficients
 
     @property
-    def x(self):
+    @jaxtyped(typechecker=beartype)
+    def x(self) -> Float[jax.Array, " n"]:
         return self.axes[0]
 
     @property
-    def y(self):
+    @jaxtyped(typechecker=beartype)
+    def y(self) -> Float[jax.Array, " n"]:
         return self.axes[1]
 
     @property
-    def z(self):
+    @jaxtyped(typechecker=beartype)
+    def z(self) -> Float[jax.Array, " n"]:
         return self.axes[2]
 
     @property
-    def w(self):
+    @jaxtyped(typechecker=beartype)
+    def w(self) -> Float[jax.Array, " n"]:
         return self.axes[3]
 
     @property
-    def shape(self):
+    @jaxtyped(typechecker=beartype)
+    def shape(self) -> tuple[int, ...]:
         """Return the leading batch/value shape shared by ``f``."""
         return self.coefficients.shape[: -self.dimension]
 
     @property
+    @jaxtyped(typechecker=beartype)
     def dtype(self) -> str:
         """Return the scalar dtype used by the stored control points."""
         return str(self.coefficients.dtype)
@@ -165,7 +173,7 @@ class _C0Grid(eqx.Module):
         return jnp.clip(point, lower, upper)
 
     @jaxtyped(typechecker=beartype)
-    def cell_index(self, point: Shaped[jax.Array, " d"]):
+    def cell_index(self, point: Float[jax.Array, " d"]) -> Int[jax.Array, " d"]:
         point = self._point(point)
         indices = [
             jnp.clip(jnp.searchsorted(axis, value, side="right") - 1, 0, axis.size - 2)
@@ -201,7 +209,7 @@ class _C0Grid(eqx.Module):
         return result
 
     @jaxtyped(typechecker=beartype)
-    def cell_interpolant(self, cell_index: Shaped[jax.Array, " d"]):
+    def cell_interpolant(self, cell_index: Int[jax.Array, " d"]):
         """Return the :class:`Bernstein`-family polynomial local to one cell."""
         cell_index = jnp.asarray(cell_index)
         if cell_index.shape != (self.dimension,):
@@ -219,7 +227,7 @@ class _C0Grid(eqx.Module):
         return polynomial_types[self.dimension - 1](self._cell_coefficients(cell_index))
 
     @jaxtyped(typechecker=beartype)
-    def __call__(self, point: Shaped[jax.Array, " d"]):
+    def __call__(self, point: Float[jax.Array, " d"]):
         """Evaluate the piecewise interpolant at ``point``."""
         point = self._point(point)
         cell = self.cell_index(point)
@@ -355,7 +363,7 @@ class _C0Grid(eqx.Module):
 
     @jaxtyped(typechecker=beartype)
     def _split_segment(
-        self, start: Shaped[jax.Array, " d"], end: Shaped[jax.Array, " d"]
+        self, start: Float[jax.Array, " d"], end: Float[jax.Array, " d"]
     ) -> GridSegment:
         start = self._point(start)
         end = self._point(end)
@@ -409,8 +417,8 @@ class _C0Grid(eqx.Module):
 
     @jaxtyped(typechecker=beartype)
     def _segment_grid(
-        self, start: Shaped[jax.Array, " d"], end: Shaped[jax.Array, " d"]
-    ) -> "C0Grid1D":
+        self, start: Float[jax.Array, " d"], end: Float[jax.Array, " d"]
+    ) -> "Float[C0Grid1D, '...']":
         r"""Restrict the interpolant to a straight segment as a 1D C0 grid.
 
         Built on :meth:`_split_segment`'s fixed-capacity decomposition: for
@@ -493,7 +501,7 @@ class _C0Grid(eqx.Module):
         return C0Grid1D(x, f, degree=self.dimension * self.degree)
 
     @jaxtyped(typechecker=beartype)
-    def _integrate_out(self, axis: int = 0) -> "_C0Grid":
+    def _integrate_out(self, axis: int = 0) -> "Float[_C0Grid, '...']":
         r"""Integrate the represented function over one axis' full physical range.
 
         Because the tensor-product Bernstein basis factorizes across axes,
@@ -548,6 +556,7 @@ class _C0Grid(eqx.Module):
         return cls(*new_axes, accumulator)
 
 
+@jaxtyped(typechecker=beartype)
 class C0Grid1D(_C0Grid):
     """Piecewise C0 interpolation of an arbitrary degree on a 1D rectilinear grid.
 
@@ -557,35 +566,58 @@ class C0Grid1D(_C0Grid):
     (``dimension * degree`` of the source grid) can exceed 3.
     """
 
-    def __init__(self, x, f, degree):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        f: Float[jax.Array, "*batch {degree}*(nx-1)+1"],
+        degree: int,
+    ):
         self._initialize((x,), f, dimension=1, degree=degree)
 
 
+@jaxtyped(typechecker=beartype)
 class P1C0Grid1D(_C0Grid):
     """Piecewise-linear C0 interpolation on a one-dimensional rectilinear grid."""
 
-    def __init__(self, x, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(self, x: Float[jax.Array, " nx"], f: Float[jax.Array, "*batch nx"]):
         self._initialize((x,), f, dimension=1, degree=1)
 
 
+@jaxtyped(typechecker=beartype)
 class P2C0Grid1D(_C0Grid):
     """Piecewise-quadratic C0 interpolation on a one-dimensional rectilinear grid."""
 
-    def __init__(self, x, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self, x: Float[jax.Array, " nx"], f: Float[jax.Array, "*batch 2*nx-1"]
+    ):
         self._initialize((x,), f, dimension=1, degree=2)
 
 
+@jaxtyped(typechecker=beartype)
 class P3C0Grid1D(_C0Grid):
     """Piecewise-cubic C0 interpolation on a one-dimensional rectilinear grid."""
 
-    def __init__(self, x, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self, x: Float[jax.Array, " nx"], f: Float[jax.Array, "*batch 3*nx-2"]
+    ):
         self._initialize((x,), f, dimension=1, degree=3)
 
 
+@jaxtyped(typechecker=beartype)
 class P1C0Grid2D(_C0Grid):
     """Bilinear C0 interpolation on a two-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        f: Float[jax.Array, "*batch nx ny"],
+    ):
         self._initialize((x, y), f, dimension=2, degree=1)
 
     split_segment = _C0Grid._split_segment
@@ -593,10 +625,17 @@ class P1C0Grid2D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P2C0Grid2D(_C0Grid):
     """Biquadratic C0 interpolation on a two-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        f: Float[jax.Array, "*batch 2*nx-1 2*ny-1"],
+    ):
         self._initialize((x, y), f, dimension=2, degree=2)
 
     split_segment = _C0Grid._split_segment
@@ -604,10 +643,17 @@ class P2C0Grid2D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P3C0Grid2D(_C0Grid):
     """Bicubic C0 interpolation on a two-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        f: Float[jax.Array, "*batch 3*nx-2 3*ny-2"],
+    ):
         self._initialize((x, y), f, dimension=2, degree=3)
 
     split_segment = _C0Grid._split_segment
@@ -615,10 +661,18 @@ class P3C0Grid2D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P1C0Grid3D(_C0Grid):
     """Trilinear C0 interpolation on a three-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        f: Float[jax.Array, "*batch nx ny nz"],
+    ):
         self._initialize((x, y, z), f, dimension=3, degree=1)
 
     split_segment = _C0Grid._split_segment
@@ -626,10 +680,18 @@ class P1C0Grid3D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P2C0Grid3D(_C0Grid):
     """Triquadratic C0 interpolation on a three-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        f: Float[jax.Array, "*batch 2*nx-1 2*ny-1 2*nz-1"],
+    ):
         self._initialize((x, y, z), f, dimension=3, degree=2)
 
     split_segment = _C0Grid._split_segment
@@ -637,10 +699,18 @@ class P2C0Grid3D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P3C0Grid3D(_C0Grid):
     """Tricubic C0 interpolation on a three-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        f: Float[jax.Array, "*batch 3*nx-2 3*ny-2 3*nz-2"],
+    ):
         self._initialize((x, y, z), f, dimension=3, degree=3)
 
     split_segment = _C0Grid._split_segment
@@ -648,10 +718,19 @@ class P3C0Grid3D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P1C0Grid4D(_C0Grid):
     """Quadrilinear C0 interpolation on a four-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, w, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        w: Float[jax.Array, " nw"],
+        f: Float[jax.Array, "*batch nx ny nz nw"],
+    ):
         self._initialize((x, y, z, w), f, dimension=4, degree=1)
 
     split_segment = _C0Grid._split_segment
@@ -659,10 +738,19 @@ class P1C0Grid4D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P2C0Grid4D(_C0Grid):
     """Quadriquadratic C0 interpolation on a four-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, w, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        w: Float[jax.Array, " nw"],
+        f: Float[jax.Array, "*batch 2*nx-1 2*ny-1 2*nz-1 2*nw-1"],
+    ):
         self._initialize((x, y, z, w), f, dimension=4, degree=2)
 
     split_segment = _C0Grid._split_segment
@@ -670,10 +758,19 @@ class P2C0Grid4D(_C0Grid):
     integrate_out = _C0Grid._integrate_out
 
 
+@jaxtyped(typechecker=beartype)
 class P3C0Grid4D(_C0Grid):
     """Quadricubic C0 interpolation on a four-dimensional rectilinear grid."""
 
-    def __init__(self, x, y, z, w, f):
+    @jaxtyped(typechecker=beartype)
+    def __init__(
+        self,
+        x: Float[jax.Array, " nx"],
+        y: Float[jax.Array, " ny"],
+        z: Float[jax.Array, " nz"],
+        w: Float[jax.Array, " nw"],
+        f: Float[jax.Array, "*batch 3*nx-2 3*ny-2 3*nz-2 3*nw-2"],
+    ):
         self._initialize((x, y, z, w), f, dimension=4, degree=3)
 
     split_segment = _C0Grid._split_segment
