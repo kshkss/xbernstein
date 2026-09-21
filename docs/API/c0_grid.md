@@ -71,3 +71,15 @@ this reduces to a per-cell, width-weighted sum directly on the shared
 refined array — no reconstruction of individual cells is needed. Unlike
 `segment_grid`, the result's shape depends only on the grid's static shape,
 so `integrate_out` is `jax.jit`/`jax.vmap`-traceable.
+
+`minimize`/`maximize` (available in every dimension, including 1D) find the
+global extremum of the represented function over the grid's whole physical
+domain. Each cell's `cell_interpolant` is minimized independently with the
+same branch-and-bound solver as `xbernstein.minimize` — the convex-hull
+certification is only ever local to one cell — and the
+best result across all cells is kept, so cost scales with the total number
+of cells. Unlike the module-level function, the returned `x` is a *physical*
+point with trailing shape `(dimension,)` in every dimension, matching this
+class's other physical-point arguments and results. As with the underlying
+per-cell solvers, `max_steps`/`eps` must stay concrete Python values, so
+`minimize`/`maximize` cannot be nested inside an outer `jax.jit`.
