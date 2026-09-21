@@ -24,14 +24,16 @@ raw shared Bernstein coefficient, not a nodal function value, matching the
 elsewhere in this library.
 """
 
+import itertools
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from .bernstein import Bernstein
-from .bernstein_2d import Bernstein2D
-from .bernstein_3d import Bernstein3D
-from .bernstein_4d import Bernstein4D
+from .bernstein import Bernstein, _minimize
+from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
+from .bernstein_3d import Bernstein3D, _minimize as _minimize_3d
+from .bernstein_4d import Bernstein4D, _minimize as _minimize_4d
 from .hermite_grid import GridSegment
 
 
@@ -182,6 +184,94 @@ class _C0Grid(eqx.Module):
         cell = self.cell_index(point)
         local = self._local_coordinates(point, cell)
         return self.cell_interpolant(cell)(*tuple(local))
+
+    _cell_solvers = {1: _minimize, 2: _minimize_2d, 3: _minimize_3d, 4: _minimize_4d}
+
+    def _extreme(self, sign: float, max_steps: int, eps: float):
+        r"""Shared branch-and-bound reduction behind :meth:`minimize`/:meth:`maximize`.
+
+        Every cell's :meth:`cell_interpolant` is an independent tensor-product
+        Bernstein polynomial, so the grid's global extremum is the best of
+        each cell's *local* extremum — the convex-hull property that
+        certifies branch and bound within one cell says nothing about other
+        cells. This runs the same per-cell solver used by the module-level
+        :func:`xbernstein.minimize` (``sign=1.0``) on every cell and keeps
+        the smallest result, mirroring how :func:`xbernstein.maximize`
+        negates the coefficients before minimizing (``sign=-1.0``) — so a
+        single reduction (``<``) is correct for both directions, and only
+        the reported value needs the sign undone at the end.
+
+        Cost scales with the total number of cells (the product of
+        per-axis cell counts), since a global extremum genuinely requires
+        checking every cell. ``max_steps`` and ``eps`` must stay concrete
+        Python values, as for the per-cell solvers themselves — this method
+        cannot be nested inside an outer ``jax.jit``.
+        """
+        solver = self._cell_solvers[self.dimension]
+        cell_counts = tuple(axis.shape[0] - 1 for axis in self.axes)
+        batch_dimensions = len(self.shape)
+        batch_shape = self.shape
+
+        best_value = None
+        best_point = None
+        for cell in itertools.product(*(range(count) for count in cell_counts)):
+            cell_index = jnp.asarray(cell, dtype=jnp.int32)
+            coefficients = sign * self._cell_coefficients(cell_index)
+
+            if batch_dimensions:
+                flat = coefficients.reshape(
+                    (-1,) + coefficients.shape[batch_dimensions:]
+                )
+                value, x = jax.vmap(solver, in_axes=(0, None, None))(
+                    flat, max_steps, eps
+                )
+            else:
+                value, x = solver(coefficients, max_steps, eps)
+
+            if self.dimension == 1:
+                x = x[..., None]
+            if batch_dimensions:
+                value = value.reshape(batch_shape)
+                x = x.reshape(batch_shape + (self.dimension,))
+
+            starts = jnp.stack([axis[index] for axis, index in zip(self.axes, cell)])
+            ends = jnp.stack([axis[index + 1] for axis, index in zip(self.axes, cell)])
+            point = starts + x * (ends - starts)
+
+            if best_value is None:
+                best_value, best_point = value, point
+            else:
+                better = value < best_value
+                best_value = jnp.where(better, value, best_value)
+                best_point = jnp.where(better[..., None], point, best_point)
+
+        from . import OptimizeResult
+
+        return OptimizeResult(f=sign * best_value, x=best_point)
+
+    def minimize(self, max_steps: int = 200, eps: float = 1e-6):
+        r"""Approximate $\min_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
+
+        Applies :func:`xbernstein.minimize`'s per-cell branch and bound to
+        every cell of the grid and returns the best result as an
+        :class:`~xbernstein.OptimizeResult`, whose ``x`` is a *physical*
+        point — unlike the module-level function's ``[0,1]``-parameter
+        location. ``x`` always has trailing shape ``(dimension,)``,
+        including for one-dimensional grids, matching every other physical
+        point in this class's API (``__call__``, ``cell_index``, ...).
+
+        Available in every dimension, unlike :meth:`split_segment`,
+        :meth:`segment_grid`, and :meth:`integrate_out`.
+        """
+        return self._extreme(1.0, max_steps, eps)
+
+    def maximize(self, max_steps: int = 200, eps: float = 1e-6):
+        r"""Approximate $\max_{\mathbf{x}}p(\mathbf{x})$ over the grid's physical domain.
+
+        Implemented, like :func:`xbernstein.maximize`, as the negated
+        :meth:`minimize`. See :meth:`minimize` for the meaning of ``x``.
+        """
+        return self._extreme(-1.0, max_steps, eps)
 
     def _segment_parameters(self, start, end):
         """Return sorted per-axis grid-line crossing parameters along a segment.
