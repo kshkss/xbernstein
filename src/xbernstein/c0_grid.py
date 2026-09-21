@@ -30,6 +30,8 @@ from typing import NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from beartype import beartype
+from jaxtyping import Shaped, jaxtyped
 
 from .bernstein import Bernstein, _minimize
 from .bernstein_2d import Bernstein2D, _minimize as _minimize_2d
@@ -54,6 +56,7 @@ class GridOptimizeResult(NamedTuple):
     cell: jax.Array
 
 
+@jaxtyped(typechecker=beartype)
 class _C0Grid(eqx.Module):
     """Shared implementation for the public ``P{degree}C0Grid{dimension}D`` classes."""
 
@@ -62,7 +65,14 @@ class _C0Grid(eqx.Module):
     dimension: int = eqx.field(static=True)
     degree: int = eqx.field(static=True)
 
-    def _initialize(self, axes, f, dimension, degree):
+    @jaxtyped(typechecker=beartype)
+    def _initialize(
+        self,
+        axes: tuple[Shaped[jax.Array, " _"], ...],
+        f: Shaped[jax.Array, "..."],
+        dimension: int,
+        degree: int,
+    ):
         if degree < 1:
             raise ValueError(f"degree must be >= 1, got {degree}")
 
