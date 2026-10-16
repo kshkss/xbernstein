@@ -87,6 +87,7 @@ many polynomials at once.
 | Rational simplex function | `RationalBernstein2DS`, `RationalBernstein3DS`, `RationalBernstein4DS` |
 | Interpolation | `linear_interpolate_*d`, `hermite_interpolate_*d`, `quintic_hermite_interpolate_*d`, `rational_hermite_interpolate_*d` |
 | Hermite grid interpolation | `HermiteGrid1D`–`4D`, `QuinticHermiteGrid1D`–`4D`, `GridSegment` |
+| C1 finite-element grid interpolation | `P3C1Grid1D`–`4D`, `P4C1Grid1D`–`4D`, `P5C1Grid1D`–`4D` |
 | 3D rational Hermite grid | `RationalHermiteGrid3D`, `GridSegment3D` |
 | Piecewise 3D G² curve | `PiecewiseRationalCurve3D` |
 | Piecewise 3D C¹ curve | `PiecewiseCurve3D` |
